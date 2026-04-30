@@ -15,6 +15,7 @@ export const erpEndpoints = {
 
   sucursales: {
     todas_sucursales: "/sucursales",
+    sucursal: (id: number) => `/sucursales/get-info-sucursal/${id}`,
     get_to_transfer: "/sucursales/sucursales-to-transfer",
   },
 

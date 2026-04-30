@@ -6,7 +6,7 @@ import jsPDF from "jspdf";
 import "dayjs/locale/es";
 import { User } from "lucide-react";
 
-import logo from "@/assets/sandy-logo-png.png";
+import logo from "@/assets/NOVAPOSPNG.png";
 import type { VentaHistorialPDF } from "@/Types/PDF/VentaHistorialPDF";
 import { formatearMoneda } from "@/Pages/requisiciones/PDF/Pdf";
 import { useApiQuery } from "@/hooks/genericoCall/genericoCallHook";
