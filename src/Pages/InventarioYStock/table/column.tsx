@@ -25,6 +25,7 @@ import {
   SquarePen,
   PowerOff,
   Copy,
+  Trash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -74,10 +75,16 @@ import {
 import "@tanstack/react-table";
 import type { RowData } from "@tanstack/react-table";
 
-// (opcional) mantén meta para otros callbacks
+// declare module "@tanstack/react-table" {
+//   interface TableMeta<TData extends RowData> {
+//     onDisableProduct?: (row: TData) => void;
+//   }
+// }
+
 declare module "@tanstack/react-table" {
   interface TableMeta<TData extends RowData> {
     onDisableProduct?: (row: TData) => void;
+    onRequestDeleteProduct?: (row: number) => void;
   }
 }
 
@@ -796,6 +803,21 @@ export const makeColumnsInventario = (
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="flex items-center gap-2 text-red-600 focus:text-red-700"
+                  onSelect={(e) => {
+                    e.preventDefault();
+
+                    info.table.options.meta?.onRequestDeleteProduct?.(
+                      info.row.original.id,
+                    );
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar producto
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -804,9 +826,7 @@ export const makeColumnsInventario = (
     }),
   ];
 
-  // 👉 Añade la columna COSTO solo si NO es vendedor
   if (rolUser !== "VENDEDOR") {
-    // la insertamos después de "descripcion" (posición 2)
     cols.splice(2, 0, COSTO_COL);
   }
 

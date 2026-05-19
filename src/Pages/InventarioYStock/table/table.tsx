@@ -32,6 +32,8 @@ type Props = {
     limit: number;
   };
   rolUser: string;
+
+  onRequestDeleteProduct?: (producto: number) => void;
 };
 
 function TableInventario({
@@ -40,6 +42,7 @@ function TableInventario({
   pagination,
   meta,
   rolUser,
+  onRequestDeleteProduct,
 }: Props) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
 
@@ -47,12 +50,12 @@ function TableInventario({
     meta?.totalPages ??
     Math.max(
       1,
-      Math.ceil((meta?.totalCount ?? 0) / (meta?.limit ?? pagination.pageSize))
+      Math.ceil((meta?.totalCount ?? 0) / (meta?.limit ?? pagination.pageSize)),
     );
 
   const columns = React.useMemo(
     () => makeColumnsInventario(rolUser),
-    [rolUser]
+    [rolUser],
   );
 
   const table = useReactTable({
@@ -66,8 +69,11 @@ function TableInventario({
     manualSorting: true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    meta: {},
+    meta: {
+      onRequestDeleteProduct: onRequestDeleteProduct,
+    },
   });
+
   console.log("inventario: ", data);
 
   return (
@@ -159,12 +165,12 @@ function TableInventario({
         </button>
 
         <select
-          className="ml-auto border rounded px-2 py-1"
+          className="ml-auto border rounded px-2 py-1 bg-transparent"
           value={table.getState().pagination.pageSize}
           onChange={(e) => table.setPageSize(Number(e.target.value))}
         >
           {[10, 20, 50, 100].map((ps) => (
-            <option key={ps} value={ps}>
+            <option key={ps} value={ps} className="dark:bg-black">
               {ps}/pág
             </option>
           ))}
