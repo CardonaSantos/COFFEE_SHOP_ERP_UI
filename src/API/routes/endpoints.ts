@@ -201,4 +201,7 @@ export const erpEndpoints = {
       opened: "repair/get-regist-open-repair",
     },
   },
+  dashboard_analitycs: {
+    dashboard: "/analytics/dashboard-ventas",
+  },
 } as const;

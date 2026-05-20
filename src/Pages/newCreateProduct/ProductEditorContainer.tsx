@@ -151,7 +151,6 @@ export default function ProductEditorContainer({
   };
 
   const handleSubmit = async () => {
-    console.log("prices:", JSON.stringify(formState.prices, null, 2));
     const v = validateBeforeSubmit(formState, mode);
     if (!v.ok) {
       v.errors.forEach((msg) => toast.error(msg));
