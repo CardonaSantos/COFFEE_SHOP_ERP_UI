@@ -33,6 +33,7 @@ import {
   TrendingUp,
   FileSignature,
   ChartScatter,
+  LayoutDashboard,
 } from "lucide-react";
 
 import {
@@ -65,11 +66,7 @@ import {
 import { useMemo } from "react";
 
 export const menuVendedor = [
-  // ==========================================
-  // 1. VENTAS Y OPERACIONES (Mayor prioridad)
-  // ==========================================
-  { icon: Home, label: "Inicio", href: "/" },
-
+  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
   {
     icon: Store,
     label: "Ventas",
@@ -79,6 +76,8 @@ export const menuVendedor = [
         label: "Punto de Venta",
         href: "/punto-venta",
       },
+      { icon: FileText, label: "Cotizador", href: "/cotizador" },
+
       { icon: CreditCard, label: "Gestión de Créditos", href: "/creditos" },
       {
         icon: History,
@@ -88,24 +87,31 @@ export const menuVendedor = [
     ],
   },
 
-  // ==========================================
-  // 2. CONSULTAS RÁPIDAS (Atención al cliente)
-  // ==========================================
-  // Ruta aplanada: un vendedor necesita ver el stock con 1 solo clic
+  // 2. CONSULTAS RÁPIDAS
   { icon: Package, label: "Inventario General", href: "/inventario-stock" },
+
+  {
+    icon: Wallet,
+    label: "Caja Operativa",
+    submenu: [
+      {
+        icon: NotebookPen,
+        label: "Apertura / Registro",
+        href: "/registro-caja",
+      },
+    ],
+  },
+
   { icon: Users, label: "Directorio de Clientes", href: "/clientes-manage" },
 
-  // ==========================================
   // 3. RENDIMIENTO PERSONAL
-  // ==========================================
   { icon: Goal, label: "Mis Metas", href: "/mis-metas" },
 ];
 
 const menuItemsAdmin = [
-  // ==========================================
   // 1. OPERACIONES DIARIAS (Lo más usado)
-  // ==========================================
-  { icon: Home, label: "Inicio", href: "/" },
+  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
+  { icon: Home, label: "Centro de Acciones", href: "/centro-acciones" },
 
   {
     icon: Store,

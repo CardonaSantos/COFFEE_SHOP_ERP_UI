@@ -25,6 +25,7 @@ import {
   SquarePen,
   PowerOff,
   Copy,
+  Trash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -74,10 +75,16 @@ import {
 import "@tanstack/react-table";
 import type { RowData } from "@tanstack/react-table";
 
-// (opcional) mantén meta para otros callbacks
+// declare module "@tanstack/react-table" {
+//   interface TableMeta<TData extends RowData> {
+//     onDisableProduct?: (row: TData) => void;
+//   }
+// }
+
 declare module "@tanstack/react-table" {
   interface TableMeta<TData extends RowData> {
     onDisableProduct?: (row: TData) => void;
+    onRequestDeleteProduct?: (row: number) => void;
   }
 }
 
@@ -299,7 +306,6 @@ const PRORRATEO_COL: ColumnDef<ProductoInventarioResponse, null> =
 const VALOR_INVENTARIO: ColumnDef<ProductoInventarioResponse, number> =
   columnHelper.accessor(
     (row) => {
-      // 1) Valorización por lotes visibles (sucursal)
       const lots = row.stocks ?? [];
       const valorLotes = lots.reduce(
         (acc, l) =>
@@ -307,7 +313,6 @@ const VALOR_INVENTARIO: ColumnDef<ProductoInventarioResponse, number> =
         0,
       );
 
-      // 2) Fallback: si no hay lotes, usa stock agregado * costo de producto
       if (valorLotes === 0) {
         const qtyAgg =
           (row.stocksBySucursal ?? []).reduce(
@@ -499,58 +504,63 @@ export const makeColumnsInventario = (
           cmpDescNullsLast(parseDMY(x.fechaIngreso), parseDMY(y.fechaIngreso)),
         );
 
-        const isProductStock = info.row.original.type === "PRODUCTO";
-
         const show = items.slice(0, 2);
-
         const extra = items.length - show.length;
 
         return (
-          <div className="max-w-[220px]">
-            {show.map((s, i) => {
-              return (
-                <div
-                  key={s.id ?? i}
-                  className="flex items-center gap-1 text-[11px]"
-                >
-                  <Link
-                    to={`/stock-edit/${s.id}?kind=${
-                      isProductStock ? "PRODUCTO" : "PRESENTACION"
-                    }`}
-                    className="hover:cursor-pointer hover:text-blue-600"
-                  >
-                    <span className="tabular-nums">{s.cantidad}</span>
-                    <span className="opacity-60">•</span>
-                    <span className="truncate">{s.fechaIngreso || "N/A"}</span>
-                  </Link>
+          <div className="max-w-[240px] space-y-1">
+            {show.map((s, i) => (
+              <Link
+                key={s.id ?? i}
+                to={`/stock-edit/${s.id}`}
+                className="block rounded px-2 py-1 hover:bg-muted transition-colors"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="tabular-nums text-[10px] font-medium">
+                    {s.cantidad} uds
+                  </span>
                 </div>
-              );
-            })}
-            {extra > 0 ? (
+                <div className="text-[10px] text-muted-foreground truncate">
+                  Ingreso: {s.fechaIngreso || "N/A"}
+                </div>
+              </Link>
+            ))}
+
+            {extra > 0 && (
               <Popover>
-                <PopoverTrigger className="text-[11px] text-primary hover:underline dark:text-white">
+                <PopoverTrigger className="text-[11px] text-primary hover:underline">
                   Ver {extra} más…
                 </PopoverTrigger>
-                <PopoverContent className="w-80">
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+
+                <PopoverContent className="w-72 p-2">
+                  <div className="max-h-52 overflow-y-auto space-y-2">
                     {items.map((s, i) => (
-                      <div
+                      <Link
                         key={s.id ?? i}
-                        className="flex items-center gap-2 text-sm"
+                        to={`/stock-edit/${s.id}`}
+                        className="block rounded px-2 py-1 hover:bg-muted transition-colors"
                       >
-                        <span className="tabular-nums text-[11px]">
-                          {s.cantidad} unidades
-                        </span>
-                        <Separator orientation="vertical" className="h-4" />
-                        <span className="text-[11px]">
-                          Ingresado: {s.fechaIngreso || "N/A"}
-                        </span>
-                      </div>
+                        <div
+                          key={s.id ?? i}
+                          className="border rounded px-2 py-1 text-xs"
+                        >
+                          <div className="flex justify-between font-medium tabular-nums">
+                            <span>{s.cantidad} uds</span>
+                          </div>
+                          <div className="text-muted-foreground">
+                            Ingreso: {s.fechaIngreso || "N/A"}
+                          </div>
+
+                          <div className="text-muted-foreground">
+                            F. Vencimiento: {s.fechaVencimiento || "N/A"}
+                          </div>
+                        </div>
+                      </Link>
                     ))}
                   </div>
                 </PopoverContent>
               </Popover>
-            ) : null}
+            )}
           </div>
         );
       },
@@ -793,6 +803,21 @@ export const makeColumnsInventario = (
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="flex items-center gap-2 text-red-600 focus:text-red-700"
+                  onSelect={(e) => {
+                    e.preventDefault();
+
+                    info.table.options.meta?.onRequestDeleteProduct?.(
+                      info.row.original.id,
+                    );
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar producto
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -801,9 +826,7 @@ export const makeColumnsInventario = (
     }),
   ];
 
-  // 👉 Añade la columna COSTO solo si NO es vendedor
   if (rolUser !== "VENDEDOR") {
-    // la insertamos después de "descripcion" (posición 2)
     cols.splice(2, 0, COSTO_COL);
   }
 

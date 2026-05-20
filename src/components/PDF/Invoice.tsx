@@ -1,13 +1,9 @@
-// pages/ventas/Invoice.tsx
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
-import dayjs from "dayjs";
 import "dayjs/locale/es";
-import localizedFormat from "dayjs/plugin/localizedFormat";
-import customParseFormat from "dayjs/plugin/customParseFormat";
 import { User } from "lucide-react";
 
 import logo from "@/assets/NOVAPOSPNG.png";
@@ -15,13 +11,7 @@ import type { VentaHistorialPDF } from "@/Types/PDF/VentaHistorialPDF";
 import { formatearMoneda } from "@/Pages/requisiciones/PDF/Pdf";
 import { useApiQuery } from "@/hooks/genericoCall/genericoCallHook";
 import { PageHeader } from "@/utils/components/PageHeaderPos";
-
-dayjs.extend(localizedFormat);
-dayjs.extend(customParseFormat);
-dayjs.locale("es");
-
-const formatDate = (fecha: string) =>
-  dayjs(fecha).format("DD MMMM YYYY, hh:mm:ss A");
+import { formattFecha } from "@/Pages/Utils/Utils";
 
 export default function Invoice() {
   const { id } = useParams();
@@ -121,7 +111,7 @@ export default function Invoice() {
     "CF";
 
   return (
-    <div className="p-4 bg-slate-50 min-h-screen">
+    <div className="p-4 min-h-screen">
       <PageHeader
         title="Comprobante de venta"
         fallbackBackTo="/"
@@ -170,8 +160,8 @@ export default function Invoice() {
           width: "210mm",
           minHeight: "297mm",
           margin: "0 auto",
-          backgroundColor: "#ffffff",
-          color: "#0f172a", // slate-900
+          // backgroundColor: "#ffffff",
+          // color: "#0f172a", // slate-900
           padding: "24mm 18mm 18mm",
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial",
@@ -185,7 +175,7 @@ export default function Invoice() {
             <div className="flex items-center gap-3">
               <img
                 src={logo}
-                className="w-[6rem] h-[6rem]"
+                className="w-[5rem] h-[5rem]"
                 alt="Logo"
                 crossOrigin="anonymous"
               />
@@ -237,7 +227,7 @@ export default function Invoice() {
               <div className="space-y-1">
                 <p>
                   <span className="text-slate-500">Fecha:&nbsp;</span>
-                  {formatDate(venta.fechaVenta)}
+                  {formattFecha(venta.fechaVenta)}
                 </p>
                 <p>
                   <span className="text-slate-500">Método de pago:&nbsp;</span>

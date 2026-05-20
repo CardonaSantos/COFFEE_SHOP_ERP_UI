@@ -15,7 +15,7 @@ const hasPrices = (
   arr.length > 0 &&
   arr.every(
     (p) =>
-      gt0(p.precio) &&
+      gte0(p.precio) &&
       (p.rol ?? "") !== "" &&
       Number.isFinite(Number(p.orden ?? 0)),
   );
@@ -28,6 +28,11 @@ const uniqueRolOrden = (arr: { rol: string; orden: number }[]) => {
     seen.add(key);
   }
   return true;
+};
+
+const gte0 = (n: unknown) => {
+  const v = Number(n);
+  return Number.isFinite(v) && v >= 0;
 };
 
 const singleDefaultPresentation = (

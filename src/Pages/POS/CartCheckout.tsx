@@ -166,9 +166,10 @@ export default function CartCheckout({
               (p) =>
                 p.rol !== ("DISTRIBUIDOR" as RolPrecio) &&
                 p.rol !== ("PROMOCION" as RolPrecio) &&
-                p.precio > 0,
+                Number(p.precio) >= 0,
             )
-          : item.precios.filter((p) => p.precio > 0);
+          : item.precios.filter((p) => Number(p.precio) >= 0);
+
       return { ...item, preciosVisibles };
     });
   }, [cart, userRol]);
@@ -279,24 +280,22 @@ export default function CartCheckout({
                           />
                         </SelectTrigger>
                         <SelectContent>
-                          {item.preciosVisibles
-                            .filter((prec) => prec.precio > 0)
-                            .map((precio) => (
-                              <SelectItem
-                                key={precio.id}
-                                value={precio.id.toString()}
-                                className="text-xs"
-                              >
-                                <div className="flex w-full items-center justify-between">
-                                  <span className="tabular-nums">
-                                    {formatCurrency(precio.precio)}
-                                  </span>
-                                  <span className="text-[10px] text-muted-foreground ml-2">
-                                    {precio.rol.toLowerCase()}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
+                          {item.preciosVisibles.map((precio) => (
+                            <SelectItem
+                              key={precio.id}
+                              value={precio.id.toString()}
+                              className="text-xs"
+                            >
+                              <div className="flex w-full items-center justify-between">
+                                <span className="tabular-nums">
+                                  {formatCurrency(precio.precio)}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground ml-2">
+                                  {precio.rol.toLowerCase()}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>

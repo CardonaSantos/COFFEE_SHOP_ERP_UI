@@ -1,12 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SimpleProvider } from "@/Types/Proveedor/SimpleProveedor";
-import dayjs from "dayjs";
-import "dayjs/locale/es";
-import utc from "dayjs/plugin/utc";
-import localizedFormat from "dayjs/plugin/localizedFormat";
-import { ProductCreate } from "./interfaces.interface";
 import { QueryTable } from "./interfaces/querytable";
 import TableInventario from "./table/table";
 import { PaginatedInventarioResponse } from "./interfaces/InventaryInterfaces";
@@ -15,40 +9,31 @@ import { Link } from "react-router-dom";
 import FiltersSection from "./filters/filters-sections";
 import { CategoriaWithCount } from "../Categorias/CategoriasMainPage";
 import { TipoPresentacion } from "../newCreateProduct/interfaces/DomainProdPressTypes";
+import {
+  PayloadDeleteProduct,
+  useDeleteProduct,
+} from "@/hooks/use-products/use-products";
+import { toast } from "sonner";
+import { getApiErrorMessageAxios } from "../Utils/UtilsErrorApi";
+import { AdvancedDialogERP } from "@/utils/components/dialog/advanced-dialog";
+import { useStore } from "@/components/Context/ContextSucursal";
 
-dayjs.extend(utc);
-dayjs.extend(localizedFormat);
-dayjs.locale("es");
+type PaginationState = {
+  pageIndex: number;
+  pageSize: number;
+};
 
 interface InventarioProps {
-  handleSelecTiposEmpaque: (ids: number[]) => void;
   categorias: CategoriaWithCount[];
-  proveedores: SimpleProvider[];
-  openCategory: boolean;
-  setOpenCategory: React.Dispatch<React.SetStateAction<boolean>>;
   loadInventoryData: () => Promise<void>;
-  //crear categoria
-  //Para crear producto y limpiar
-  productCreate: ProductCreate;
-  setProductCreate: React.Dispatch<React.SetStateAction<ProductCreate>>;
-  //croper de imagenes
   setSearchQuery: React.Dispatch<React.SetStateAction<QueryTable>>;
   searchQuery: QueryTable;
   productsInventario: PaginatedInventarioResponse;
-  setPagination: React.Dispatch<
-    React.SetStateAction<{
-      pageIndex: number;
-      pageSize: number;
-    }>
-  >;
-  pagination: {
-    pageIndex: number;
-    pageSize: number;
-  };
-
+  setPagination: React.Dispatch<React.SetStateAction<PaginationState>>;
+  pagination: PaginationState;
   isloadingInventario: boolean;
-
   handleSelectCat: (ids: number[]) => void;
+  handleSelecTiposEmpaque: (ids: number[]) => void;
   tiposPresentacion: TipoPresentacion[];
   rolUser: string;
 }
@@ -67,6 +52,70 @@ export default function Inventario({
   handleSelecTiposEmpaque,
   rolUser,
 }: InventarioProps) {
+  const userId = useStore((state) => state.userId) ?? 0;
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [productoIdToDelete, setProductoIdToDelete] = React.useState<number>(0);
+  const [pass, setPass] = useState<string>("");
+
+  const eliminarProductoMutation = useDeleteProduct(productoIdToDelete);
+
+  const resetDeleteState = React.useCallback(() => {
+    setProductoIdToDelete(0);
+    setDeleteDialogOpen(false);
+    setPass("");
+  }, []);
+
+  const handlePickDelete = React.useCallback((id: number) => {
+    setProductoIdToDelete(id);
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const handleDeleteProducto = React.useCallback(() => {
+    if (!productoIdToDelete) {
+      toast.warning("Seleccione un producto válido");
+      return;
+    }
+
+    const payload: PayloadDeleteProduct = {
+      password: pass.trim(),
+      userId,
+    };
+
+    if (!payload.password.length) {
+      toast.warning("Ingrese su contraseña");
+      return;
+    }
+
+    toast.promise(eliminarProductoMutation.mutateAsync(payload), {
+      success: () => {
+        resetDeleteState();
+        void loadInventoryData();
+        return "Producto eliminado de inventario";
+      },
+      loading: "Eliminando registro...",
+      error: (error) => getApiErrorMessageAxios(error),
+    });
+  }, [
+    productoIdToDelete,
+    pass,
+    userId,
+    eliminarProductoMutation,
+    resetDeleteState,
+    loadInventoryData,
+  ]);
+
+  const handleOpenDeleteDialogChange = React.useCallback(
+    (open: boolean) => {
+      setDeleteDialogOpen(open);
+
+      if (!open) {
+        resetDeleteState();
+      }
+    },
+    [resetDeleteState],
+  );
+
   return (
     <>
       <div className="mb-3 grid gap-3 lg:grid-cols-[1fr_auto] items-start">
@@ -106,7 +155,6 @@ export default function Inventario({
             </div>
           </div>
 
-          {/* Inserta los dos selects aquí (como fragmento) */}
           <FiltersSection
             handleSelecTiposEmpaque={handleSelecTiposEmpaque}
             tiposPresentacion={tiposPresentacion}
@@ -159,6 +207,40 @@ export default function Inventario({
         setPagination={setPagination}
         data={productsInventario.data}
         meta={productsInventario.meta}
+        onRequestDeleteProduct={handlePickDelete}
+      />
+
+      <AdvancedDialogERP
+        type="destructive"
+        title="Eliminar producto"
+        description="
+             ¿Seguro que deseas eliminar el producto?
+              Esta acción no se puede deshacer."
+        open={deleteDialogOpen}
+        onOpenChange={handleOpenDeleteDialogChange}
+        cancelButton={{
+          label: "Cancelar",
+          disabled: eliminarProductoMutation.isPending,
+          onClick: resetDeleteState,
+        }}
+        confirmButton={{
+          label: "Eliminar",
+          loading: eliminarProductoMutation.isPending,
+          loadingText: "Eliminando...",
+          onClick: handleDeleteProducto,
+        }}
+        children={
+          <div className="">
+            <Input
+              type="password"
+              placeholder="Ingrese su contraseña"
+              value={pass}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setPass(e.target.value)
+              }
+            />
+          </div>
+        }
       />
     </>
   );

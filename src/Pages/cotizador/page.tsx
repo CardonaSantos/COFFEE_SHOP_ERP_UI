@@ -50,6 +50,7 @@ import DialogImages from "../DialogImages";
 import CotizacionPrint from "./components/cotizacion-print";
 import { useReactToPrint } from "react-to-print";
 import TablePOS from "../POS/table/header";
+import { useGetSucursal } from "@/hooks/getSucursales/use-sucursales";
 type SourceType = "producto" | "presentacion";
 
 type ProductoPOS = {
@@ -114,8 +115,10 @@ function CotizadorMainPage() {
     contentRef: printRef,
     documentTitle: `Cotizacion-${Date.now()}`,
   });
+
+  const { data: sucursal } = useGetSucursal(sucursalId);
   //  CARRITO
-  // ─────────────────────────────────────────────────────────────
+  // ────────────────────────────────────────────const { data: sucursal } = useGetSucursal(sucursalId);─────────────────
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -509,7 +512,7 @@ function CotizadorMainPage() {
     );
   };
 
-  console.log("adicionales ", costosAdicionales);
+  if (!sucursal) return null;
 
   return (
     <PageTransition fallbackBackTo="/" titleHeader="Cotizador">
@@ -808,6 +811,7 @@ function CotizadorMainPage() {
         <CotizacionPrint
           ref={printRef}
           cart={cart}
+          sucursal={sucursal}
           cliente={selectedCustomerID?.nombre ?? nombre}
           totalCarrito={carritoResumen.totalCarrito}
           totalDescuento={carritoResumen.totalDescuento}

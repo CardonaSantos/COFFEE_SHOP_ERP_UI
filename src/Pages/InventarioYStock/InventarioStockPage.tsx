@@ -1,139 +1,256 @@
-import { useEffect, useState } from "react";
-import { ProductCreate } from "./interfaces.interface";
+import React from "react";
+import { useSearchParams } from "react-router-dom";
 import { useStore } from "@/components/Context/ContextSucursal";
-import { SimpleProvider } from "@/Types/Proveedor/SimpleProveedor";
-import Inventario from "./Inventario";
-import { useApiQuery } from "@/hooks/genericoCall/genericoCallHook";
-import { PaginatedInventarioResponse } from "./interfaces/InventaryInterfaces";
 import { QueryTable } from "./interfaces/querytable";
-import {
-  CategoriaWithCount,
-  CATS_LIST_QK,
-} from "../Categorias/CategoriasMainPage";
-import { PaginatedResponse } from "../tipos-presentaciones/Interfaces/tiposPresentaciones.interfaces";
-import { TipoPresentacion } from "../newCreateProduct/interfaces/DomainProdPressTypes";
+import { PaginatedInventarioResponse } from "./interfaces/InventaryInterfaces";
 import { PageTransition } from "@/components/Transition/layout-transition";
+import { useGetCategorias } from "@/hooks/use-categorias/use-categorias";
+import { useTiposPresentaciones } from "@/hooks/use-tipos-presentaciones/use-tipos-presentaciones";
+import { useGetInventary } from "@/hooks/use-products/use-products";
+import Inventario from "./Inventario";
+
+type PaginationState = {
+  pageIndex: number;
+  pageSize: number;
+};
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 20;
+
+const EMPTY_INVENTORY_RESPONSE: PaginatedInventarioResponse = {
+  data: [],
+  meta: {
+    limit: DEFAULT_LIMIT,
+    page: DEFAULT_PAGE,
+    totalCount: 0,
+    totalPages: 0,
+  },
+};
+
+function clampLimit(value: unknown) {
+  const limit = Number(value) || DEFAULT_LIMIT;
+  return Math.min(Math.max(1, limit), 100);
+}
+
+function parsePage(value: unknown) {
+  return Math.max(1, Number(value) || DEFAULT_PAGE);
+}
+
+function parseNumberArray(value: string | null): number[] {
+  if (!value) return [];
+
+  return value
+    .split(",")
+    .map((x) => Number(x))
+    .filter(Number.isFinite);
+}
+
+function setOrDeleteParam(
+  params: URLSearchParams,
+  key: string,
+  value: string | number | null | undefined,
+) {
+  const parsedValue = String(value ?? "").trim();
+
+  if (!parsedValue) {
+    params.delete(key);
+    return;
+  }
+
+  params.set(key, parsedValue);
+}
+
+function setArrayParam(
+  params: URLSearchParams,
+  key: string,
+  values: number[] | undefined,
+) {
+  const safeValues = Array.isArray(values)
+    ? values.map(Number).filter(Number.isFinite)
+    : [];
+
+  if (!safeValues.length) {
+    params.delete(key);
+    return;
+  }
+
+  params.set(key, safeValues.join(","));
+}
+
+function getPaginationFromParams(params: URLSearchParams): PaginationState {
+  const page = parsePage(params.get("page"));
+  const limit = clampLimit(params.get("limit"));
+
+  return {
+    pageIndex: page - 1,
+    pageSize: limit,
+  };
+}
+
+function getQueryFromParams(
+  params: URLSearchParams,
+  sucursalId: number,
+): QueryTable {
+  const pagination = getPaginationFromParams(params);
+
+  return {
+    sucursalId,
+    categorias: parseNumberArray(params.get("categorias")),
+    tiposPresentacion: parseNumberArray(params.get("tiposPresentacion")),
+    codigoProducto: params.get("codigoProducto") ?? "",
+    productoNombre: params.get("productoNombre") ?? "",
+    fechaVencimiento: params.get("fechaVencimiento") ?? "",
+    precio: params.get("precio") ?? "",
+    page: pagination.pageIndex + 1,
+    limit: pagination.pageSize,
+  };
+}
+
+function writeQueryToParams(
+  currentParams: URLSearchParams,
+  query: QueryTable,
+  options?: {
+    resetPage?: boolean;
+  },
+) {
+  const nextParams = new URLSearchParams(currentParams);
+
+  setOrDeleteParam(nextParams, "productoNombre", query.productoNombre);
+  setOrDeleteParam(nextParams, "codigoProducto", query.codigoProducto);
+  setOrDeleteParam(nextParams, "fechaVencimiento", query.fechaVencimiento);
+  setOrDeleteParam(nextParams, "precio", query.precio);
+
+  setArrayParam(nextParams, "categorias", query.categorias);
+  setArrayParam(nextParams, "tiposPresentacion", query.tiposPresentacion);
+
+  if (options?.resetPage ?? true) {
+    nextParams.set("page", String(DEFAULT_PAGE));
+  } else {
+    nextParams.set("page", String(parsePage(query.page)));
+  }
+
+  const limit = clampLimit(query.limit);
+  if (limit === DEFAULT_LIMIT) {
+    nextParams.delete("limit");
+  } else {
+    nextParams.set("limit", String(limit));
+  }
+
+  return nextParams;
+}
 
 function InventarioStockPage() {
-  const recibidoPorId = useStore((s) => s.userId) ?? 0;
   const rolUser = useStore((s) => s.userRol) ?? "";
   const sucursalId = useStore((s) => s.sucursalId) ?? 0;
-  //CATEGORIAS
-  const [openCategory, setOpenCategory] = useState<boolean>(false);
-  const [productCreate, setProductCreate] = useState<ProductCreate>({
-    precioCostoActual: null,
-    codigoProducto: "",
-    codigoProveedor: "",
-    categorias: [],
-    descripcion: "",
-    nombre: "",
-    precioVenta: [],
-    creadoPorId: recibidoPorId,
-    stockMinimo: null,
-    imagenes: [],
-  });
-  //DATA PARA INVENTARIO
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
-  const [searchQuery, setSearchQuery] = useState<QueryTable>({
-    categorias: [],
-    codigoProducto: "",
-    fechaVencimiento: "",
-    productoNombre: "",
-    sucursalId: sucursalId,
-    precio: "",
-    tiposPresentacion: [],
-  });
 
-  const handleSelectCat = (ids: number[]) => {
-    setSearchQuery((prev) => ({
-      ...prev,
-      categorias: ids,
-    }));
-  };
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const handleSelecTiposEmpaque = (ids: number[]) => {
-    setSearchQuery((prev) => ({
-      ...prev,
-      tiposPresentacion: ids,
-    }));
-  };
+  const pagination = React.useMemo(
+    () => getPaginationFromParams(searchParams),
+    [searchParams],
+  );
+
+  const searchQuery = React.useMemo(
+    () => getQueryFromParams(searchParams, sucursalId),
+    [searchParams, sucursalId],
+  );
+
+  const setInventoryQuery = React.useCallback<
+    React.Dispatch<React.SetStateAction<QueryTable>>
+  >(
+    (updater) => {
+      setSearchParams(
+        (prevParams) => {
+          const currentQuery = getQueryFromParams(prevParams, sucursalId);
+
+          const nextQuery =
+            typeof updater === "function" ? updater(currentQuery) : updater;
+
+          return writeQueryToParams(prevParams, nextQuery, {
+            resetPage: true,
+          });
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams, sucursalId],
+  );
+
+  const setPagination = React.useCallback<
+    React.Dispatch<React.SetStateAction<PaginationState>>
+  >(
+    (updater) => {
+      setSearchParams(
+        (prevParams) => {
+          const currentPagination = getPaginationFromParams(prevParams);
+
+          const nextPagination =
+            typeof updater === "function"
+              ? updater(currentPagination)
+              : updater;
+
+          const nextParams = new URLSearchParams(prevParams);
+
+          const nextPage = Math.max(1, nextPagination.pageIndex + 1);
+          const nextLimit = clampLimit(nextPagination.pageSize);
+
+          if (nextPage === DEFAULT_PAGE) {
+            nextParams.delete("page");
+          } else {
+            nextParams.set("page", String(nextPage));
+          }
+
+          if (nextLimit === DEFAULT_LIMIT) {
+            nextParams.delete("limit");
+          } else {
+            nextParams.set("limit", String(nextLimit));
+          }
+
+          return nextParams;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const handleSelectCat = React.useCallback(
+    (ids: number[]) => {
+      setInventoryQuery((prev) => ({
+        ...prev,
+        categorias: ids,
+      }));
+    },
+    [setInventoryQuery],
+  );
+
+  const handleSelecTiposEmpaque = React.useCallback(
+    (ids: number[]) => {
+      setInventoryQuery((prev) => ({
+        ...prev,
+        tiposPresentacion: ids,
+      }));
+    },
+    [setInventoryQuery],
+  );
 
   const {
-    data: productsInventario = {
-      data: [],
-      meta: {
-        limit: 0,
-        page: 0,
-        totalCount: 0,
-        totalPages: 0,
-      },
-    },
+    data: productsInventario = EMPTY_INVENTORY_RESPONSE,
     refetch: reFetchInventario,
     isFetching: isloadingInventario,
-  } = useApiQuery<PaginatedInventarioResponse>(
-    [
-      "productos-inventario",
-      searchQuery,
-      pagination.pageIndex,
-      pagination.pageSize,
-    ],
-    "products/products/for-inventary",
-    {
-      params: {
-        ...searchQuery,
-        page: pagination.pageIndex + 1,
-        limit: pagination.pageSize,
-      },
-    },
-    {
-      staleTime: 0,
-      refetchOnWindowFocus: "always",
-      placeholderData: {
-        data: [],
-        meta: { totalCount: 0, totalPages: 0, page: 1, limit: 10 },
-      },
-    },
-  );
+  } = useGetInventary(searchQuery);
 
-  const { data: cats } = useApiQuery<CategoriaWithCount[]>(
-    CATS_LIST_QK,
-    "/categoria/all-cats-with-counts",
-    undefined,
-    {
-      staleTime: 0,
-      refetchOnMount: "always",
-    },
-  );
+  const { data: categorias } = useGetCategorias();
+  const { data: presentations } = useTiposPresentaciones();
 
-  const { data: provs = [], refetch: reFetchProvs } = useApiQuery<
-    SimpleProvider[]
-  >(
-    ["proveedores"],
-    "/proveedor/simple-proveedor",
-    {},
-    {
-      initialData: [],
-    },
-  );
+  const categoriasSecure = Array.isArray(categorias) ? categorias : [];
+  const tiposPresentacion = Array.isArray(presentations?.data)
+    ? presentations.data
+    : [];
 
-  const { data: tiposPresentacionesResponse } = useApiQuery<
-    PaginatedResponse<TipoPresentacion>
-  >(["empaques"], "tipo-presentacion");
-  const tiposPresentacion = tiposPresentacionesResponse?.data ?? [];
-
-  const reloadInventaryData = async () => {
+  const reloadInventaryData = React.useCallback(async () => {
     await reFetchInventario();
-    await reFetchProvs();
-  };
-  const categoriasSecure = Array.isArray(cats) ? cats : [];
-
-  //si cambia el filtro, regresa a primera pagina
-  useEffect(() => {
-    setPagination((p) => ({ ...p, pageIndex: 0 }));
-  }, [JSON.stringify(searchQuery)]);
-  console.log("los productos inventario son: ", productsInventario);
-
-  console.log("los tiposPresentacion: ", tiposPresentacion);
+  }, [reFetchInventario]);
 
   return (
     <PageTransition fallbackBackTo="/" titleHeader="Inventario General">
@@ -141,25 +258,14 @@ function InventarioStockPage() {
         rolUser={rolUser}
         handleSelecTiposEmpaque={handleSelecTiposEmpaque}
         tiposPresentacion={tiposPresentacion}
-        //filtrado-->
         handleSelectCat={handleSelectCat}
-        //
-        setSearchQuery={setSearchQuery}
+        setSearchQuery={setInventoryQuery}
         categorias={categoriasSecure}
-        proveedores={provs}
-        // PROPS PARA ABRIR EL MODAL
-        openCategory={openCategory}
-        setOpenCategory={setOpenCategory}
         loadInventoryData={reloadInventaryData}
-        //createCategory
-        //Para creacion de producto y limpieza al terminar de crear
-        productCreate={productCreate}
-        setProductCreate={setProductCreate}
         searchQuery={searchQuery}
         productsInventario={productsInventario}
         setPagination={setPagination}
         pagination={pagination}
-        //Para cropear imagenes el resultado
         isloadingInventario={isloadingInventario}
       />
     </PageTransition>

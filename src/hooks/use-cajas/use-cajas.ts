@@ -6,7 +6,7 @@ import { CajaConSaldo } from "@/utils/components/SelectMethodPayment/PurchasePay
 import { CajaAbierta, IniciarCaja } from "@/Pages/Caja/types/interfaces";
 import { useInvalidateHandler } from "@/utils/query";
 import {
-  CerrarCajaV2Dto,
+  CerrarCajaV3Dto,
   PreviaCierreResponse,
 } from "@/Pages/Caja/types/cierres.types";
 import { CrearMovimientoFinancieroDto } from "@/Pages/Caja/Movimientos/movimientos-financieros";
@@ -70,7 +70,7 @@ export function useGetCajasDisponibles(sucursalId: number) {
 export function useCloseCaja() {
   const query = useInvalidateHandler();
 
-  return erp.useMutationApi<CerrarCajaV2Dto>(
+  return erp.useMutationApi<CerrarCajaV3Dto>(
     "post",
     erpEndpoints.cajas.cerrar_caja,
     undefined,

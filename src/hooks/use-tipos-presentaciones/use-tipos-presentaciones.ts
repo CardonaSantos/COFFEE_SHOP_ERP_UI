@@ -7,12 +7,5 @@ export function useTiposPresentaciones() {
   return useApiQuery<PaginatedResponse<TipoPresentacion>>(
     tipoPresentacionesQkeys.all,
     "tipo-presentacion",
-    undefined,
-    {
-      staleTime: 0,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
-      retry: 1,
-    },
   );
 }

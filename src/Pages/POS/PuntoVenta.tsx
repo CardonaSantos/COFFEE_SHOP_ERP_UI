@@ -1,4 +1,5 @@
 "use client";
+
 import React, {
   useCallback,
   useEffect,
@@ -70,22 +71,168 @@ import type {
   SourceType,
 } from "@/Types/POS/interfaces";
 import TablePOS from "./table/header";
+import {
+  UrlQuerySchema,
+  useDebouncedValue,
+  useUrlQueryState,
+} from "@/utils/components/params/use-params";
 
 export type { imagenesProducto, Precios };
 
-function useDebounce<T>(value: T, delay = 400) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
+type PosUrlFilters = {
+  q: string;
+  cats: number[];
+  codigoItem: string;
+  codigoProveedor: string;
+  nombreItem: string;
+  priceRange: string;
+  tipoEmpaque: number[];
+  page: number;
+  limit: number;
+};
+
+const POS_FILTERS_SCHEMA: UrlQuerySchema<PosUrlFilters> = {
+  q: {
+    type: "string",
+    defaultValue: "",
+  },
+  cats: {
+    type: "numberArray",
+    defaultValue: [],
+  },
+  codigoItem: {
+    type: "string",
+    defaultValue: "",
+  },
+  codigoProveedor: {
+    type: "string",
+    defaultValue: "",
+  },
+  nombreItem: {
+    type: "string",
+    defaultValue: "",
+  },
+  priceRange: {
+    type: "string",
+    defaultValue: "",
+  },
+  tipoEmpaque: {
+    type: "numberArray",
+    defaultValue: [],
+  },
+  page: {
+    type: "number",
+    defaultValue: 1,
+  },
+  limit: {
+    type: "number",
+    defaultValue: 5,
+  },
+};
+
+const EMPTY_PRODUCTS_RESPONSE = {
+  data: [],
+  meta: {
+    limit: 10,
+    page: 1,
+    totalCount: 0,
+    totalPages: 1,
+    totals: {
+      presentaciones: 0,
+      productos: 0,
+    },
+  },
+};
+
+function clampPage(page: number, totalPages: number) {
+  return Math.max(1, Math.min(page, totalPages || 1));
+}
+
+function clampLimit(limit: number) {
+  return Math.min(Math.max(1, Number(limit) || 5), 100);
+}
+
+function makeUid(source: SourceType, id: number) {
+  return `${source}-${id}`;
+}
+
+function mapPOSFiltersToQueryDTO(
+  filters: PosUrlFilters,
+  sucursalId: number,
+): NewQueryDTO {
+  return {
+    cats: filters.cats,
+    codigoItem: filters.codigoItem,
+    codigoProveedor: filters.codigoProveedor,
+    nombreItem: filters.nombreItem,
+    priceRange: filters.priceRange,
+    tipoEmpaque: filters.tipoEmpaque,
+    sucursalId,
+    limit: filters.limit,
+    page: filters.page,
+  };
+}
+
+function mapQueryDTOToPOSFilters(
+  dto: NewQueryDTO,
+  fallback: PosUrlFilters,
+): Partial<PosUrlFilters> {
+  return {
+    cats: dto.cats ?? [],
+    codigoItem: dto.codigoItem ?? "",
+    codigoProveedor: dto.codigoProveedor ?? "",
+    nombreItem: dto.nombreItem ?? "",
+    priceRange: dto.priceRange ?? "",
+    tipoEmpaque: dto.tipoEmpaque ?? [],
+    limit: clampLimit(dto.limit ?? fallback.limit),
+    page: 1,
+  };
+}
+
+function defaultMapToCartProduct(p: ProductoData): ProductoPOS {
+  return {
+    id: p.id,
+    source: (p.__source as SourceType) ?? "producto",
+    nombre: p.nombre,
+    descripcion: p.descripcion ?? "",
+    precioVenta: 0,
+    codigoProducto: p.codigoProducto,
+    creadoEn: new Date().toISOString(),
+    actualizadoEn: new Date().toISOString(),
+    stock: (p.stocks ?? []).map((s) => ({
+      id: s.id,
+      cantidad: s.cantidad,
+      fechaIngreso: s.fechaIngreso || "",
+      fechaVencimiento: s.fechaVencimiento || "",
+    })),
+    precios: (p.precios ?? []).map((pr) => ({
+      id: pr.id,
+      precio: Number(pr.precio) || 0,
+      rol: (pr.rol as RolPrecio) ?? ("PUBLICO" as RolPrecio),
+    })),
+    imagenesProducto: (p.images ?? [])
+      .filter((im) => !!im?.url)
+      .map((im) => ({ id: im.id ?? 0, url: im.url ?? "" })),
+  };
 }
 
 export default function PuntoVenta() {
   const userId = useStore((state) => state.userId) ?? 0;
   const userRol = useStore((state) => state.userRol) ?? "";
   const sucursalId = useStore((state) => state.sucursalId) ?? 0;
+
+  const { value: urlFilters, patchValue: patchUrlFilters } = useUrlQueryState(
+    POS_FILTERS_SCHEMA,
+    {
+      replace: true,
+      preserveUnknownParams: true,
+    },
+  );
+
+  const search = urlFilters.q;
+  const page = Math.max(1, Number(urlFilters.page) || 1);
+  const limit = clampLimit(urlFilters.limit);
+  const debouncedSearch = useDebouncedValue(search, 400);
 
   // ── Cart ──────────────────────────────────────────────────────────────────
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -136,44 +283,44 @@ export default function PuntoVenta() {
   const [direccion, setDireccion] = useState("");
   const [observaciones, setObservaciones] = useState("");
 
-  // ── Pagination & search ───────────────────────────────────────────────────
-  const [limit, setLimit] = useState(5);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
-
-  const [queryOptions, setQueryOptions] = useState<NewQueryDTO>({
-    cats: [],
-    codigoItem: "",
-    codigoProveedor: "",
-    nombreItem: "",
-    priceRange: "",
-    tipoEmpaque: [],
-    sucursalId,
-    limit,
-    page,
-  });
-
-  useEffect(() => {
-    setQueryOptions((prev) => ({ ...prev, sucursalId, limit, page }));
-  }, [sucursalId, limit, page]);
-
+  // ── Scanner ───────────────────────────────────────────────────────────────
   const [isScannerMode, setIsScannerMode] = useState(true);
   const [scanInput, setScanInput] = useState("");
   const scanInputRef = useRef<HTMLInputElement>(null);
 
+  const queryOptions = useMemo<NewQueryDTO>(
+    () => mapPOSFiltersToQueryDTO({ ...urlFilters, page, limit }, sucursalId),
+    [urlFilters, sucursalId, page, limit],
+  );
+
+  const setQueryOptions = useCallback<
+    React.Dispatch<React.SetStateAction<NewQueryDTO>>
+  >(
+    (updater) => {
+      patchUrlFilters((prev) => {
+        const currentDTO = mapPOSFiltersToQueryDTO(prev, sucursalId);
+
+        const nextDTO =
+          typeof updater === "function" ? updater(currentDTO) : updater;
+
+        return mapQueryDTOToPOSFilters(nextDTO, prev);
+      });
+    },
+    [patchUrlFilters, sucursalId],
+  );
+
   const handleToggleScannerMode = useCallback(() => {
     setIsScannerMode((prev) => {
       const next = !prev;
+
       if (next) {
-        // Al activar, forzar focus al siguiente frame
         setTimeout(() => scanInputRef.current?.focus(), 50);
       }
+
       return next;
     });
   }, []);
 
-  /** Atajo de teclado global: F2 para alternar modo rápido */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "F2") {
@@ -181,52 +328,65 @@ export default function PuntoVenta() {
         handleToggleScannerMode();
       }
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleToggleScannerMode]);
 
-  /** Autofocus al montar la página (isScannerMode arranca en true) */
   useEffect(() => {
     setTimeout(() => scanInputRef.current?.focus(), 100);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── API params memo ───────────────────────────────────────────────────────
   const apiParams = useMemo<NewQueryPOS>(() => {
-    const p: Partial<NewQueryPOS> = {
+    const params: Partial<NewQueryPOS> = {
       sucursalId,
       limit,
       page,
       q: debouncedSearch || undefined,
     };
-    if (queryOptions.cats?.length) p.cats = queryOptions.cats;
-    if (queryOptions.codigoProveedor)
-      p.codigoProveedor = queryOptions.codigoProveedor;
-    if (queryOptions.tipoEmpaque) p.tipoEmpaque = queryOptions.tipoEmpaque;
-    if (queryOptions.priceRange) p.priceRange = queryOptions.priceRange;
-    return p as NewQueryPOS;
+
+    if (queryOptions.cats?.length) {
+      params.cats = queryOptions.cats;
+    }
+
+    if (queryOptions.codigoItem) {
+      params.codigoItem = queryOptions.codigoItem;
+    }
+
+    if (queryOptions.codigoProveedor) {
+      params.codigoProveedor = queryOptions.codigoProveedor;
+    }
+
+    if (queryOptions.nombreItem) {
+      params.nombreItem = queryOptions.nombreItem;
+    }
+
+    if (queryOptions.tipoEmpaque?.length) {
+      params.tipoEmpaque = queryOptions.tipoEmpaque;
+    }
+
+    if (queryOptions.priceRange) {
+      params.priceRange = queryOptions.priceRange;
+    }
+
+    return params as NewQueryPOS;
   }, [
-    debouncedSearch,
     sucursalId,
     limit,
     page,
+    debouncedSearch,
     queryOptions.cats,
+    queryOptions.codigoItem,
     queryOptions.codigoProveedor,
+    queryOptions.nombreItem,
     queryOptions.tipoEmpaque,
     queryOptions.priceRange,
   ]);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
   const {
-    data: productsResponse = {
-      data: [],
-      meta: {
-        limit: 10,
-        page: 1,
-        totalCount: 0,
-        totalPages: 1,
-        totals: { presentaciones: 0, productos: 0 },
-      },
-    },
+    data: productsResponse = EMPTY_PRODUCTS_RESPONSE,
     refetch: refetchProducts,
     isFetching: isLoadingProducts,
     isError: isErrorProducts,
@@ -241,12 +401,15 @@ export default function PuntoVenta() {
 
   const { mutateAsync: createSale, isPending: isCreatingSale } =
     useCreateVenta();
+
   const { mutateAsync: createPriceRequest, isPending: isCreatingPriceRequest } =
     useCreatePriceRequest();
+
   const {
     mutateAsync: createCreditRequest,
     isPending: isPendingCreditRequest,
   } = useCreateCreditoRequest();
+
   const { data: tiposPresentacionesResponse } = useTiposPresentaciones();
   const { data: cats } = useGetCategorias();
 
@@ -264,41 +427,62 @@ export default function PuntoVenta() {
     totalCount: 0,
   };
 
-  // Errors
+  // ── Errors ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isErrorProducts && errorProducts)
+    if (isErrorProducts && errorProducts) {
       toast.error(getApiErrorMessageAxios(errorProducts));
-    if (isErrorCustomers && errorCustomers)
+    }
+
+    if (isErrorCustomers && errorCustomers) {
       toast.error(getApiErrorMessageAxios(errorCustomers));
+    }
   }, [isErrorProducts, errorProducts, isErrorCustomers, errorCustomers]);
 
-  // ── Pagination ────────────────────────────────────────────────────────────
-  const handlePageChange = (nextPage: number) =>
-    setPage(Math.max(1, Math.min(nextPage, meta.totalPages || 1)));
+  // ── Pagination & search ───────────────────────────────────────────────────
+  const handlePageChange = useCallback(
+    (nextPage: number) => {
+      patchUrlFilters({
+        page: clampPage(nextPage, meta.totalPages || 1),
+      });
+    },
+    [patchUrlFilters, meta.totalPages],
+  );
 
-  const handleLimitChange = (nextLimit: number) => {
-    setLimit(nextLimit);
-    setPage(1);
-  };
+  const handleLimitChange = useCallback(
+    (nextLimit: number) => {
+      patchUrlFilters({
+        limit: clampLimit(nextLimit),
+        page: 1,
+      });
+    },
+    [patchUrlFilters],
+  );
+
+  const handleSearchItemsInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      patchUrlFilters({
+        q: e.target.value,
+        page: 1,
+      });
+    },
+    [patchUrlFilters],
+  );
 
   // ── Cart helpers ──────────────────────────────────────────────────────────
-  const handleSearchItemsInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearch(e.target.value);
-    setPage(1);
-  };
-
-  const makeUid = (s: SourceType, id: number) => `${s}-${id}`;
-
   const addToCart = useCallback((product: ProductoPOS) => {
     const uid = makeUid(product.source, product.id);
+
     setCart((prev) => {
-      const existing = prev.find((i) => i.uid === uid);
+      const existing = prev.find((item) => item.uid === uid);
+
       if (existing) {
-        return prev.map((i) =>
-          i.uid === uid ? { ...i, quantity: i.quantity + 1 } : i,
+        return prev.map((item) =>
+          item.uid === uid ? { ...item, quantity: item.quantity + 1 } : item,
         );
       }
+
       const initial = product.precios?.[0];
+
       const newItem: CartItem = {
         uid,
         id: product.id,
@@ -312,84 +496,66 @@ export default function PuntoVenta() {
         selectedPriceRole:
           (initial?.rol as RolPrecio) ?? ("PUBLICO" as RolPrecio),
       };
+
       return [...prev, newItem];
     });
   }, []);
 
-  function defaultMapToCartProduct(p: ProductoData): ProductoPOS {
-    return {
-      id: p.id,
-      source: (p.__source as SourceType) ?? "producto",
-      nombre: p.nombre,
-      descripcion: p.descripcion ?? "",
-      precioVenta: 0,
-      codigoProducto: p.codigoProducto,
-      creadoEn: new Date().toISOString(),
-      actualizadoEn: new Date().toISOString(),
-      stock: (p.stocks ?? []).map((s) => ({
-        id: s.id,
-        cantidad: s.cantidad,
-        fechaIngreso: s.fechaIngreso || "",
-        fechaVencimiento: s.fechaVencimiento || "",
-      })),
-      precios: (p.precios ?? []).map((pr) => ({
-        id: pr.id,
-        precio: Number(pr.precio) || 0,
-        rol: (pr.rol as RolPrecio) ?? ("PUBLICO" as RolPrecio),
-      })),
-      imagenesProducto: (p.images ?? [])
-        .filter((im) => !!im?.url)
-        .map((im) => ({ id: im.id ?? 0, url: im.url ?? "" })),
-    };
-  }
-
-  const handleImageClick = (images: string[]) => {
+  const handleImageClick = useCallback((images: string[]) => {
     setOpenImage(true);
     setImagesProduct(images);
-  };
+  }, []);
 
   const getRemainingForRow = useCallback(
     (p: ProductoData) => {
       const source = (p.__source as SourceType) ?? "producto";
       const uid = makeUid(source, p.id);
-      const totalStock = (p.stocks ?? []).reduce((a, s) => a + s.cantidad, 0);
-      const reserved = cart.find((i) => i.uid === uid)?.quantity ?? 0;
+      const totalStock = (p.stocks ?? []).reduce(
+        (acc, s) => acc + s.cantidad,
+        0,
+      );
+      const reserved = cart.find((item) => item.uid === uid)?.quantity ?? 0;
+
       return Math.max(0, totalStock - reserved);
     },
     [cart],
   );
 
-  const updateQuantityByUid = (uid: string, qty: number) =>
+  const updateQuantityByUid = useCallback((uid: string, qty: number) => {
     setCart((prev) =>
-      prev.map((i) => (i.uid === uid ? { ...i, quantity: qty } : i)),
-    );
-
-  const updatePriceByUid = (
-    uid: string,
-    newPrice: number,
-    newRole: RolPrecio,
-  ) =>
-    setCart((prev) =>
-      prev.map((i) =>
-        i.uid === uid
-          ? {
-              ...i,
-              selectedPrice: newPrice,
-              selectedPriceRole: newRole,
-              selectedPriceId:
-                i.precios.find(
-                  (p) => p.precio === newPrice && p.rol === newRole,
-                )?.id ?? i.selectedPriceId,
-            }
-          : i,
+      prev.map((item) =>
+        item.uid === uid ? { ...item, quantity: qty } : item,
       ),
     );
+  }, []);
 
-  const removeFromCartByUid = (uid: string) =>
-    setCart((prev) => prev.filter((i) => i.uid !== uid));
+  const updatePriceByUid = useCallback(
+    (uid: string, newPrice: number, newRole: RolPrecio) => {
+      setCart((prev) =>
+        prev.map((item) =>
+          item.uid === uid
+            ? {
+                ...item,
+                selectedPrice: newPrice,
+                selectedPriceRole: newRole,
+                selectedPriceId:
+                  item.precios.find(
+                    (price) =>
+                      price.precio === newPrice && price.rol === newRole,
+                  )?.id ?? item.selectedPriceId,
+              }
+            : item,
+        ),
+      );
+    },
+    [],
+  );
+
+  const removeFromCartByUid = useCallback((uid: string) => {
+    setCart((prev) => prev.filter((item) => item.uid !== uid));
+  }, []);
 
   // ── Reset state after sale ────────────────────────────────────────────────
-  /** Limpia todo y devuelve el POS a estado inicial, listo para la siguiente venta */
   const resetPOS = useCallback(() => {
     setCart([]);
     setImei("");
@@ -405,9 +571,12 @@ export default function PuntoVenta() {
     setNit("");
     setObservaciones("");
     setScanInput("");
-    setSearch("");
-    setPage(1);
-  }, []);
+
+    patchUrlFilters({
+      q: "",
+      page: 1,
+    });
+  }, [patchUrlFilters]);
 
   // ── Credito state ─────────────────────────────────────────────────────────
   const totalCarrito = useMemo(
@@ -415,6 +584,7 @@ export default function PuntoVenta() {
       cart.reduce((acc, prod) => acc + prod.selectedPrice * prod.quantity, 0),
     [cart],
   );
+
   const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
   const [creditoForm, setCreditoForm] = useState<FormCreditoState>(() => ({
@@ -444,28 +614,30 @@ export default function PuntoVenta() {
   }));
 
   type LineaForm = NonNullable<FormCreditoState["lineas"]>[number];
+
   const mapCartToLineas = useCallback(
     (items: CartItem[]): NonNullable<FormCreditoState["lineas"]> =>
-      items.map<LineaForm>((i) => ({
-        productoId: i.source === "presentacion" ? undefined : i.id,
-        presentacionId: i.source === "presentacion" ? i.id : undefined,
-        cantidad: i.quantity,
-        precioUnitario: i.selectedPrice,
-        precioSeleccionadoId: i.selectedPriceId,
+      items.map<LineaForm>((item) => ({
+        productoId: item.source === "presentacion" ? undefined : item.id,
+        presentacionId: item.source === "presentacion" ? item.id : undefined,
+        cantidad: item.quantity,
+        precioUnitario: item.selectedPrice,
+        precioSeleccionadoId: item.selectedPriceId,
         subtotal:
-          Math.round((i.quantity * i.selectedPrice + Number.EPSILON) * 100) /
-          100,
-        nombreProductoSnapshot: i.nombre,
+          Math.round(
+            (item.quantity * item.selectedPrice + Number.EPSILON) * 100,
+          ) / 100,
+        nombreProductoSnapshot: item.nombre,
         presentacionNombreSnapshot:
-          i.source === "presentacion" ? i.nombre : undefined,
+          item.source === "presentacion" ? item.nombre : undefined,
         codigoBarrasSnapshot: undefined,
       })),
     [],
   );
 
   useEffect(() => {
-    setCreditoForm((f) => ({
-      ...f,
+    setCreditoForm((prev) => ({
+      ...prev,
       sucursalId,
       clienteId: selectedCustomerID?.id,
       totalPropuesto: r2(totalCarrito),
@@ -473,19 +645,22 @@ export default function PuntoVenta() {
   }, [sucursalId, selectedCustomerID?.id, totalCarrito]);
 
   useEffect(() => {
-    setCreditoForm((f) => ({ ...f, lineas: mapCartToLineas(cart) }));
+    setCreditoForm((prev) => ({
+      ...prev,
+      lineas: mapCartToLineas(cart),
+    }));
   }, [cart, mapCartToLineas]);
 
   useEffect(() => {
     if (paymentMethod === MetodoPagoMainPOS.CREDITO) {
-      setCreditoForm((f) => ({
-        ...f,
-        planCuotaModo: f.planCuotaModo ?? "IGUALES",
-        interesTipo: f.interesTipo ?? "NONE",
-        cuotasTotalesPropuestas: f.cuotasTotalesPropuestas || 6,
-        diasEntrePagos: f.diasEntrePagos || 30,
+      setCreditoForm((prev) => ({
+        ...prev,
+        planCuotaModo: prev.planCuotaModo ?? "IGUALES",
+        interesTipo: prev.interesTipo ?? "NONE",
+        cuotasTotalesPropuestas: prev.cuotasTotalesPropuestas || 6,
+        diasEntrePagos: prev.diasEntrePagos || 30,
         fechaPrimeraCuota:
-          f.fechaPrimeraCuota || dayjs().add(30, "day").format("YYYY-MM-DD"),
+          prev.fechaPrimeraCuota || dayjs().add(30, "day").format("YYYY-MM-DD"),
       }));
     }
   }, [paymentMethod]);
@@ -493,9 +668,13 @@ export default function PuntoVenta() {
   // ── Customers ─────────────────────────────────────────────────────────────
   const customerOptions = useMemo(
     () =>
-      (customersResponse ?? []).map((c) => ({
-        value: c.id,
-        label: `${c.nombre} ${c?.apellidos ?? ""} ${c.telefono ? `(${c.telefono})` : ""} ${c.dpi ? `DPI: ${c.dpi}` : "DPI: N/A"} ${c.nit ? `NIT: ${c.nit}` : "NIT: N/A"} ${c.iPInternet ? `IP: ${c.iPInternet}` : ""}`,
+      (customersResponse ?? []).map((customer) => ({
+        value: customer.id,
+        label: `${customer.nombre} ${customer?.apellidos ?? ""} ${
+          customer.telefono ? `(${customer.telefono})` : ""
+        } ${customer.dpi ? `DPI: ${customer.dpi}` : "DPI: N/A"} ${
+          customer.nit ? `NIT: ${customer.nit}` : "NIT: N/A"
+        } ${customer.iPInternet ? `IP: ${customer.iPInternet}` : ""}`,
       })),
     [customersResponse],
   );
@@ -503,8 +682,10 @@ export default function PuntoVenta() {
   // ── Validations ───────────────────────────────────────────────────────────
   const isReferenceInvalid =
     paymentMethod === "TRANSFERENCIA" && !referenciaPago;
+
   const isButtonDisabled =
     isDisableButton || isReferenceInvalid || isCreatingSale;
+
   const isCreditoVenta = paymentMethod === MetodoPagoMainPOS.CREDITO;
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -513,19 +694,23 @@ export default function PuntoVenta() {
       toast.info("La cantidad a solicitar no debe ser negativa");
       return;
     }
+
     if (!selectedProductId) {
       toast.info("Debe seleccionar un producto primero");
       return;
     }
+
     try {
       await createPriceRequest({
         productoId: Number(selectedProductId),
         precioSolicitado: precioReques,
         solicitadoPorId: userId,
       });
+
       toast.success(
         "Solicitud enviada, esperando respuesta del administrador...",
       );
+
       setPrecioRequest(null);
       setSelectedProductId("");
       setOpenRequest(false);
@@ -576,6 +761,7 @@ export default function PuntoVenta() {
     };
 
     const isCustomerInfoProvided = !!saleData.nombre && !!saleData.telefono;
+
     if (
       saleData.monto > 1000 &&
       !saleData.clienteId &&
@@ -596,12 +782,13 @@ export default function PuntoVenta() {
 
     try {
       const resp = await createSale(saleData);
+
       toast.success("Venta completada con éxito");
       setVentaResponse(resp);
       setIsDialogOpen(false);
       refetchProducts();
-      // Resetear POS (también re-focaliza el escáner si está en modo rápido)
       resetPOS();
+
       setTimeout(() => setOpenSection(true), 200);
     } catch (error) {
       toast.error(getApiErrorMessageAxios(error));
@@ -620,7 +807,6 @@ export default function PuntoVenta() {
           xl:[grid-template-columns:minmax(0,1fr)_clamp(380px,32vw,440px)]
         "
       >
-        {/* ── Tabla de productos ─────────────────────────────────────────── */}
         <div className="min-w-0">
           <TablePOS
             categorias={categorias}
@@ -641,21 +827,20 @@ export default function PuntoVenta() {
             onPageChange={handlePageChange}
             onLimitChange={handleLimitChange}
             getRemainingFor={getRemainingForRow}
-            // Modo rápido
             isScannerMode={isScannerMode}
             scanInput={scanInput}
             onToggleScannerMode={handleToggleScannerMode}
             onScanInputChange={(value) => {
               setScanInput(value);
-              // Sincronizar con el estado de búsqueda para que la tabla filtre
-              setSearch(value);
-              setPage(1);
+              patchUrlFilters({
+                q: value,
+                page: 1,
+              });
             }}
             scanInputRef={scanInputRef}
           />
         </div>
 
-        {/* ── Carrito & Checkout ─────────────────────────────────────────── */}
         <div className="min-w-0">
           <CartCheckout
             nit={nit}
@@ -697,7 +882,6 @@ export default function PuntoVenta() {
         </div>
       </div>
 
-      {/* ── Crédito ────────────────────────────────────────────────────────── */}
       {isCreditoVenta && (
         <CreditoForm
           userRol={userRol}
@@ -710,7 +894,6 @@ export default function PuntoVenta() {
         />
       )}
 
-      {/* ── Petición de precio especial ─────────────────────────────────────── */}
       <div className="mt-10">
         <Card className="shadow-sm rounded-lg border overflow-hidden">
           <CardHeader className="p-5">
@@ -739,12 +922,21 @@ export default function PuntoVenta() {
                     selectedProductId
                       ? {
                           value: selectedProductId,
-                          label: `${productos.find((p) => String(p.id) === selectedProductId)?.nombre} (${productos.find((p) => String(p.id) === selectedProductId)?.codigoProducto})`,
+                          label: `${
+                            productos.find(
+                              (p) => String(p.id) === selectedProductId,
+                            )?.nombre
+                          } (${
+                            productos.find(
+                              (p) => String(p.id) === selectedProductId,
+                            )?.codigoProducto
+                          })`,
                         }
                       : null
                   }
                 />
               </div>
+
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-medium">Precio Requerido</Label>
                 <Input
@@ -760,6 +952,7 @@ export default function PuntoVenta() {
                 />
               </div>
             </div>
+
             <Button
               onClick={() => setOpenRequest(true)}
               variant="default"
@@ -780,6 +973,7 @@ export default function PuntoVenta() {
                     ¿Continuar?
                   </DialogDescription>
                 </DialogHeader>
+
                 <div className="mt-4 flex justify-end">
                   <Button
                     onClick={handleMakeRequest}
@@ -799,19 +993,17 @@ export default function PuntoVenta() {
         </Card>
       </div>
 
-      {/* ── Imágenes ──────────────────────────────────────────────────────── */}
       <DialogImages
         images={imagesProduct}
         openImage={openImage}
         setOpenImage={setOpenImage}
       />
 
-      {/* ── Venta exitosa ─────────────────────────────────────────────────── */}
       <Dialog
         open={openSection}
         onOpenChange={(open) => {
           setOpenSection(open);
-          // Al cerrar el dialog de venta exitosa, re-focalizar el escáner si está activo
+
           if (!open && isScannerMode) {
             setTimeout(() => scanInputRef.current?.focus(), 80);
           }
@@ -824,9 +1016,11 @@ export default function PuntoVenta() {
                 <CheckCircle className="w-7 h-7 text-green-600" />
               </div>
             </div>
+
             <h2 className="text-base font-semibold text-center mb-1">
               Venta Registrada
             </h2>
+
             <p className="text-center text-muted-foreground text-xs">
               La venta se ha procesado exitosamente
             </p>
@@ -843,12 +1037,14 @@ export default function PuntoVenta() {
                     #{ventaResponse.id}
                   </span>
                 </div>
+
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-muted-foreground">Fecha:</span>
                   <span className="text-xs font-semibold">
                     {formattFecha(ventaResponse.fechaVenta)}
                   </span>
                 </div>
+
                 <div className="flex justify-between items-center pt-2 border-t">
                   <span className="text-sm font-medium">Total:</span>
                   <span className="text-base font-bold text-green-600">
@@ -878,7 +1074,6 @@ export default function PuntoVenta() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Confirmar venta ────────────────────────────────────────────────── */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <div className="bg-muted/30 p-4">
@@ -888,6 +1083,7 @@ export default function PuntoVenta() {
                   <CheckCircle className="h-5 w-5 text-primary" />
                 </div>
               </div>
+
               <DialogTitle className="text-sm font-bold text-center">
                 Confirmar Venta
               </DialogTitle>
@@ -900,6 +1096,7 @@ export default function PuntoVenta() {
                 <Package className="h-3 w-3" />
                 Resumen de productos
               </div>
+
               <div className="space-y-1 max-h-20 overflow-y-auto">
                 {cart.map((item) => (
                   <div
@@ -915,16 +1112,20 @@ export default function PuntoVenta() {
                   </div>
                 ))}
               </div>
+
               <Separator />
+
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1">
                   <Coins className="h-3 w-3 text-green-600" />
                   <span className="font-semibold text-sm">Total</span>
                 </div>
+
                 <div className="text-right">
                   <div className="text-base font-bold text-green-600">
                     {formatearMoneda(totalCarrito)}
                   </div>
+
                   <Badge variant="secondary" className="text-xs">
                     {cart.length} {cart.length === 1 ? "artículo" : "artículos"}
                   </Badge>
@@ -968,6 +1169,7 @@ export default function PuntoVenta() {
               >
                 Cancelar
               </Button>
+
               <Button
                 disabled={isButtonDisabled}
                 size="sm"

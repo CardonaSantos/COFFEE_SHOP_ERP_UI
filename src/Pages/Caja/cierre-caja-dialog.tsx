@@ -1,4 +1,6 @@
 "use client";
+
+import { useEffect, useMemo } from "react";
 import { SubmitHandler, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -37,11 +39,8 @@ import { useCloseCaja, useGetPreviaCaja } from "@/hooks/use-cajas/use-cajas";
 import { getApiErrorMessageAxios } from "../Utils/UtilsErrorApi";
 import { ComprobanteTipoZ, schemaBase } from "./schema/schema";
 import { useStore } from "@/components/Context/ContextSucursal";
-import { CerrarCajaV2Dto } from "./types/cierres.types";
-
-// ============================================================================
-// TYPES
-// ============================================================================
+import { CerrarCajaV3Dto } from "./types/cierres.types";
+// import { CerrarCajaV3Dto } from "./types/cierres.types";
 
 type CuentaBancaria = {
   id: number;
@@ -63,9 +62,20 @@ type CierreCajaDialogProps = {
 
 type CierreCajaFormData = z.infer<typeof schemaBase>;
 
-// ============================================================================
-// COMPONENT
-// ============================================================================
+type EstadoCuadre = "CUADRA" | "SOBRANTE" | "FALTANTE" | null;
+
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+const normalizeEstadoCuadre = (
+  diferencia: number,
+): Exclude<EstadoCuadre, null> =>
+  Math.abs(diferencia) <= 0.01
+    ? "CUADRA"
+    : diferencia > 0
+      ? "SOBRANTE"
+      : "FALTANTE";
+
+const toInputNumber = (value: string) =>
+  value === "" ? undefined : Number(value);
 
 export function CierreCajaDialog({
   open,
@@ -76,64 +86,99 @@ export function CierreCajaDialog({
   reloadContext,
   cuentas,
 }: CierreCajaDialogProps) {
-  // --- State & Hooks ---
   const sucursalId = useStore((state) => state.sucursalId) ?? 0;
   const userId = useStore((state) => state.userId) ?? 0;
 
   const closeCaja = useCloseCaja();
   const getPreviaCaja = useGetPreviaCaja(sucursalId, registroCajaId, userId);
+
   const previa = getPreviaCaja.data;
   const isLoadingPrevia = getPreviaCaja.isPending;
   const isSubmitting = closeCaja.isPending;
 
   const form = useForm<CierreCajaFormData>({
-    values: getPreviaCaja.data
-      ? {
-          modo: "SIN_DEPOSITO",
-          abrirSiguiente: true,
-          asentarVentas: true,
-          dejarEnCaja: Number(getPreviaCaja.data.fondoFijoActual ?? 0),
-          fondoFijoSiguiente: Number(getPreviaCaja.data.fondoFijoActual ?? 0),
-        }
-      : undefined,
     resolver: zodResolver(schemaBase),
+    mode: "onChange",
     defaultValues: {
       modo: "SIN_DEPOSITO",
       abrirSiguiente: true,
-      dejarEnCaja: 0,
       asentarVentas: true,
-    },
-    resetOptions: {
-      keepDirtyValues: true,
+      dejarEnCaja: 0,
+      fondoFijoSiguiente: 0,
+      efectivoContado: 0,
+      comentarioFinal: "",
     },
   });
 
-  // --- Watched Values ---
+  useEffect(() => {
+    if (!previa || !open) return;
+
+    form.reset({
+      modo: "SIN_DEPOSITO",
+      abrirSiguiente: true,
+      asentarVentas: true,
+      dejarEnCaja: Number(previa.fondoFijoActual ?? 0),
+      fondoFijoSiguiente: Number(previa.fondoFijoActual ?? 0),
+      efectivoContado: Number(previa.enCaja ?? 0),
+      comentarioFinal: "",
+    });
+  }, [previa, open, form]);
+
   const watched = form.watch();
 
-  // --- Calculations ---
-  const enCaja = Number(previa?.enCaja ?? 0);
-  const dejarEnCaja = Number(watched.dejarEnCaja ?? 0);
-  const disponibleOperable = Math.max(0, enCaja - dejarEnCaja);
+  const modo = watched.modo;
+  const enCaja = round2(Number(previa?.enCaja ?? 0));
+  const isDepositoTodo = watched.modo === "DEPOSITO_TODO";
+  const showBaseInput = !isDepositoTodo;
+  const baseDeseada = isDepositoTodo
+    ? 0
+    : round2(Number(watched.dejarEnCaja ?? previa?.fondoFijoActual ?? 0));
 
-  const requiereDeposito = ["DEPOSITO_PARCIAL", "DEPOSITO_TODO"].includes(
-    watched.modo,
-  );
+  const disponibleOperable = Math.max(0, round2(enCaja - baseDeseada));
 
-  const calcularDeposito = (): number => {
+  const requiereDeposito =
+    modo === "DEPOSITO_PARCIAL" || modo === "DEPOSITO_TODO";
+  const depositoCalculado = useMemo(() => {
     if (!previa) return 0;
-    if (watched.modo === "DEPOSITO_TODO") return disponibleOperable;
-    if (watched.modo === "DEPOSITO_PARCIAL") {
-      const v = Number(watched.montoParcial || 0);
-      return Math.min(Math.max(v, 0), disponibleOperable);
+    if (modo === "DEPOSITO_TODO") return disponibleOperable;
+    if (modo === "DEPOSITO_PARCIAL") {
+      const valor = Number(watched.montoParcial || 0);
+      return Math.min(Math.max(valor, 0), disponibleOperable);
     }
     return 0;
-  };
+  }, [previa, modo, watched.montoParcial, disponibleOperable]);
 
-  const depositoCalculado = calcularDeposito();
-  const saldoFinalEsperado = enCaja - depositoCalculado;
+  const saldoFinalEsperado = round2(enCaja - depositoCalculado);
 
-  // --- Validations ---
+  const efectivoContado =
+    watched.efectivoContado === undefined || watched.efectivoContado === null
+      ? null
+      : round2(Number(watched.efectivoContado));
+
+  const diferenciaCuadre =
+    efectivoContado === null ? null : round2(efectivoContado - enCaja);
+
+  const estadoCuadre: EstadoCuadre =
+    diferenciaCuadre === null ? null : normalizeEstadoCuadre(diferenciaCuadre);
+
+  const estadoCuadreLabel =
+    estadoCuadre === "CUADRA"
+      ? "Cuadra"
+      : estadoCuadre === "SOBRANTE"
+        ? "Sobrante"
+        : estadoCuadre === "FALTANTE"
+          ? "Faltante"
+          : "Pendiente";
+
+  const estadoCuadreClass =
+    estadoCuadre === "CUADRA"
+      ? "text-emerald-600"
+      : estadoCuadre === "SOBRANTE"
+        ? "text-amber-600"
+        : estadoCuadre === "FALTANTE"
+          ? "text-rose-600"
+          : "text-muted-foreground";
+
   const cuentaRequeridaError =
     requiereDeposito && !watched.cuentaBancariaId ? "Cuenta requerida" : null;
 
@@ -143,23 +188,53 @@ export function CierreCajaDialog({
       ? "Monto > 0"
       : null;
 
-  // --- Handlers ---
-  const formatCuentaBancaria = (cuenta: CuentaBancaria) => {
-    const numeroMasked = `****${cuenta.numero.slice(-4)}`;
-    return `${cuenta.alias || cuenta.banco || numeroMasked}`;
-  };
-
   const onSubmit: SubmitHandler<CierreCajaFormData> = async (data) => {
     if (!previa) return;
 
-    const enCajaLocal = Number(previa.enCaja ?? 0);
-    const dejarEnCajaLocal = Number(data.dejarEnCaja ?? 0);
-    const disponibleOperableLocal = Math.max(0, enCajaLocal - dejarEnCajaLocal);
+    const enCajaLocal = round2(Number(previa.enCaja ?? 0));
+    const efectivoContadoLocal =
+      data.efectivoContado === undefined || data.efectivoContado === null
+        ? null
+        : round2(Number(data.efectivoContado));
+
+    if (efectivoContadoLocal === null) {
+      form.setError("efectivoContado", {
+        message: "Ingrese el efectivo contado",
+      });
+      return;
+    }
+
+    if (efectivoContadoLocal < 0) {
+      form.setError("efectivoContado", {
+        message: "Efectivo contado inválido",
+      });
+      return;
+    }
+
+    const diferenciaLocal = round2(efectivoContadoLocal - enCajaLocal);
+    const estadoCuadreLocal = normalizeEstadoCuadre(diferenciaLocal);
+
+    if (estadoCuadreLocal !== "CUADRA" && !data.comentarioFinal?.trim()) {
+      form.setError("comentarioFinal", {
+        message: "Comentario requerido si hay diferencia en caja",
+      });
+      return;
+    }
+
+    // const dejarEnCajaLocal = round2(Number(data.dejarEnCaja ?? 0));
+    const dejarEnCajaLocal =
+      data.modo === "DEPOSITO_TODO" ? 0 : round2(Number(data.dejarEnCaja ?? 0));
+
+    const disponibleOperableLocal = Math.max(
+      0,
+      round2(enCajaLocal - dejarEnCajaLocal),
+    );
 
     const esDeposito =
       data.modo === "DEPOSITO_PARCIAL" || data.modo === "DEPOSITO_TODO";
 
     let depositoCalculadoLocal = 0;
+
     if (data.modo === "DEPOSITO_TODO") {
       depositoCalculadoLocal = disponibleOperableLocal;
     } else if (data.modo === "DEPOSITO_PARCIAL") {
@@ -170,7 +245,6 @@ export function CierreCajaDialog({
       );
     }
 
-    // Validations
     if (esDeposito && !data.cuentaBancariaId) {
       form.setError("cuentaBancariaId", {
         message: "Cuenta requerida",
@@ -207,7 +281,7 @@ export function CierreCajaDialog({
     }
 
     try {
-      const payload: CerrarCajaV2Dto & {
+      const payload: CerrarCajaV3Dto & {
         dejarEnCaja?: number;
         asentarVentas?: boolean;
         comprobanteTipo?: string;
@@ -217,9 +291,10 @@ export function CierreCajaDialog({
         registroCajaId,
         usuarioCierreId,
         modo: data.modo,
-        comentarioFinal: data.comentarioFinal,
-        dejarEnCaja: Number(data.dejarEnCaja ?? 0),
+        comentarioFinal: data.comentarioFinal?.trim() || undefined,
+        dejarEnCaja: dejarEnCajaLocal,
         asentarVentas: Boolean(data.asentarVentas ?? true),
+        efectivoContado: efectivoContadoLocal,
       };
 
       if (esDeposito) {
@@ -241,7 +316,7 @@ export function CierreCajaDialog({
         }
 
         if (data.modo === "DEPOSITO_PARCIAL") {
-          payload.montoParcial = depositoCalculadoLocal;
+          payload.montoParcial = round2(depositoCalculadoLocal);
         } else {
           delete (payload as any).montoParcial;
         }
@@ -257,11 +332,12 @@ export function CierreCajaDialog({
         }
       }
 
-      toast.promise(closeCaja.mutateAsync(payload), {
+      await toast.promise(closeCaja.mutateAsync(payload), {
+        loading: "Cerrando...",
         success: "Caja cerrada",
         error: (error) => getApiErrorMessageAxios(error),
-        loading: "Cerrando...",
       });
+
       onOpenChange(false);
       onClosed?.();
     } catch (error) {
@@ -271,13 +347,23 @@ export function CierreCajaDialog({
     }
   };
 
+  const desglose = previa?.desglose;
+  const warnings = previa?.warnings ?? [];
+
+  useEffect(() => {
+    if (watched.modo === "DEPOSITO_TODO") {
+      form.setValue("dejarEnCaja", 0);
+    }
+  }, [watched.modo, form]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[95vh] overflow-y-auto p-4">
         <DialogHeader className="pb-2">
           <DialogTitle className="text-lg">Cerrar Caja</DialogTitle>
           <DialogDescription className="text-xs">
-            Configure cierre y asentamiento de ventas
+            Revisa el efectivo esperado, el efectivo contado y confirma el
+            cierre.
           </DialogDescription>
         </DialogHeader>
 
@@ -289,11 +375,8 @@ export function CierreCajaDialog({
         ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-              {/* Main Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-                {/* Left Panel - Form Fields */}
                 <div className="lg:col-span-3 space-y-3">
-                  {/* Modo de cierre */}
                   <FormField
                     control={form.control}
                     name="modo"
@@ -353,13 +436,12 @@ export function CierreCajaDialog({
                     )}
                   />
 
-                  {/* Row: Asentar ventas & Dejar en caja */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <FormField
                       control={form.control}
                       name="asentarVentas"
                       render={({ field }) => (
-                        <FormItem className="flex flex-row items-center space-x-2">
+                        <FormItem className="flex flex-row items-center space-x-2 mt-6">
                           <input
                             id="asentar-ventas"
                             type="checkbox"
@@ -377,35 +459,63 @@ export function CierreCajaDialog({
                       )}
                     />
 
+                    {showBaseInput && (
+                      <FormField
+                        control={form.control}
+                        name="dejarEnCaja"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs">
+                              Dejar base
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                max={enCaja}
+                                value={field.value ?? 0}
+                                onChange={(e) =>
+                                  field.onChange(toInputNumber(e.target.value))
+                                }
+                                className="h-8 text-xs"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
                     <FormField
                       control={form.control}
-                      name="dejarEnCaja"
+                      name="efectivoContado"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-xs">Base</FormLabel>
+                          <FormLabel className="text-xs">
+                            Efectivo contado
+                          </FormLabel>
                           <FormControl>
                             <Input
                               type="number"
                               step="0.01"
                               min={0}
-                              max={enCaja}
-                              value={Number(field.value ?? 0)}
+                              placeholder="0.00"
+                              value={field.value ?? ""}
                               onChange={(e) =>
-                                field.onChange(Number(e.target.value))
+                                field.onChange(toInputNumber(e.target.value))
                               }
                               className="h-8 text-xs"
                             />
                           </FormControl>
+                          <FormMessage className="text-xs" />
                         </FormItem>
                       )}
                     />
                   </div>
 
-                  {/* Deposito Section */}
                   {requiereDeposito && (
                     <>
-                      {/* Row: Cuenta bancaria & Monto parcial */}
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <FormField
                           control={form.control}
                           name="cuentaBancariaId"
@@ -418,7 +528,7 @@ export function CierreCajaDialog({
                                 onValueChange={(value) =>
                                   field.onChange(Number(value))
                                 }
-                                value={field.value?.toString()}
+                                value={field.value?.toString() ?? ""}
                               >
                                 <FormControl>
                                   <SelectTrigger className="h-8 text-xs">
@@ -432,7 +542,9 @@ export function CierreCajaDialog({
                                       value={cuenta.id.toString()}
                                       className="text-xs"
                                     >
-                                      {formatCuentaBancaria(cuenta)}
+                                      {cuenta.nombre ||
+                                        cuenta.banco ||
+                                        `****${cuenta.numero?.slice(-4) ?? ""}`}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -454,7 +566,7 @@ export function CierreCajaDialog({
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel className="text-xs">
-                                  Monto *
+                                  Monto depósito *
                                 </FormLabel>
                                 <FormControl>
                                   <Input
@@ -462,9 +574,11 @@ export function CierreCajaDialog({
                                     step="0.01"
                                     min={0.01}
                                     max={disponibleOperable}
-                                    value={Number(field.value ?? 0)}
+                                    value={field.value ?? ""}
                                     onChange={(e) =>
-                                      field.onChange(Number(e.target.value))
+                                      field.onChange(
+                                        toInputNumber(e.target.value),
+                                      )
                                     }
                                     className="h-8 text-xs"
                                   />
@@ -480,8 +594,7 @@ export function CierreCajaDialog({
                         )}
                       </div>
 
-                      {/* Row: Tipo & Número comprobante */}
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <FormField
                           control={form.control}
                           name="comprobanteTipo"
@@ -490,7 +603,7 @@ export function CierreCajaDialog({
                               <FormLabel className="text-xs">Tipo *</FormLabel>
                               <Select
                                 onValueChange={field.onChange}
-                                value={field.value}
+                                value={field.value ?? ""}
                               >
                                 <FormControl>
                                   <SelectTrigger className="h-8 text-xs">
@@ -539,14 +652,13 @@ export function CierreCajaDialog({
                         />
                       </div>
 
-                      {/* Fecha comprobante */}
                       <FormField
                         control={form.control}
                         name="comprobanteFecha"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="text-xs">
-                              Fecha (opt.)
+                              Fecha (opcional)
                             </FormLabel>
                             <FormControl>
                               <Input
@@ -563,14 +675,16 @@ export function CierreCajaDialog({
                     </>
                   )}
 
-                  {/* Comentario final */}
                   <FormField
                     control={form.control}
                     name="comentarioFinal"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-xs">
-                          Comentario (opt.)
+                          Comentario{" "}
+                          {estadoCuadre && estadoCuadre !== "CUADRA"
+                            ? "*"
+                            : "(opcional)"}
                         </FormLabel>
                         <FormControl>
                           <Textarea
@@ -585,14 +699,28 @@ export function CierreCajaDialog({
                   />
                 </div>
 
-                {/* Right Panel - Summary */}
                 <div className="lg:col-span-1">
-                  <div className="border rounded p-2  text-xs space-y-2 sticky top-0">
+                  <div className="border rounded p-3 text-xs space-y-2 sticky top-0">
                     <h4 className="font-semibold text-xs">Resumen</h4>
+
+                    {estadoCuadre !== null && (
+                      <div
+                        className={`rounded border px-2 py-1 text-[11px] ${estadoCuadre === "CUADRA" ? "border-emerald-200 bg-emerald-50" : estadoCuadre === "SOBRANTE" ? "border-amber-200 bg-amber-50" : "border-rose-200 bg-rose-50"}`}
+                      >
+                        <div className={`font-semibold ${estadoCuadreClass}`}>
+                          {estadoCuadreLabel}
+                        </div>
+                        <div className="text-muted-foreground">
+                          {estadoCuadre === "CUADRA"
+                            ? "El efectivo contado coincide con el esperado."
+                            : `Diferencia: Q ${Math.abs(diferenciaCuadre ?? 0).toFixed(2)}`}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="space-y-1.5 border-t pt-2">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">En caja:</span>
+                        <span className="text-gray-600">En caja esperado:</span>
                         <span className="font-medium">
                           Q {enCaja.toFixed(2)}
                         </span>
@@ -600,7 +728,7 @@ export function CierreCajaDialog({
                       <div className="flex justify-between">
                         <span className="text-gray-600">Base:</span>
                         <span className="font-medium">
-                          Q {dejarEnCaja.toFixed(2)}
+                          Q {baseDeseada.toFixed(2)}
                         </span>
                       </div>
                       <div className="flex justify-between">
@@ -624,12 +752,75 @@ export function CierreCajaDialog({
                           </span>
                         </div>
                       </div>
+
+                      <div className="border-t pt-1.5 mt-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Contado:</span>
+                          <span className="font-semibold">
+                            Q {Number(efectivoContado ?? 0).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Diferencia:</span>
+                          <span
+                            className={`font-semibold ${estadoCuadre === "CUADRA" ? "text-emerald-600" : estadoCuadre === "SOBRANTE" ? "text-amber-600" : estadoCuadre === "FALTANTE" ? "text-rose-600" : ""}`}
+                          >
+                            {diferenciaCuadre === null
+                              ? "—"
+                              : `Q ${diferenciaCuadre.toFixed(2)}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      {desglose && (
+                        <div className="border-t pt-1.5 mt-1.5 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">
+                              Ingresos efectivo:
+                            </span>
+                            <span className="font-medium">
+                              Q{" "}
+                              {Number(desglose.ingresosEfectivo ?? 0).toFixed(
+                                2,
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Egresos:</span>
+                            <span className="font-medium">
+                              Q{" "}
+                              {Number(desglose.egresosEfectivo ?? 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">
+                              Depósitos cierre:
+                            </span>
+                            <span className="font-medium">
+                              Q{" "}
+                              {Number(desglose.depositosCierre ?? 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {warnings.length > 0 && (
+                        <div className="border-t pt-1.5 mt-1.5 space-y-1">
+                          {warnings.map((warning, index) => (
+                            <div
+                              key={`${warning}-${index}`}
+                              className="rounded bg-amber-50 border border-amber-200 px-2 py-1 text-[11px] text-amber-800"
+                            >
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Footer */}
               <DialogFooter className="pt-2 flex gap-2 justify-end">
                 <Button
                   type="button"

@@ -9,6 +9,7 @@ export const ComprobanteTipoZ = z.enum([
 ]);
 
 export const schemaBase = z
+
   .object({
     modo: z.enum([
       "SIN_DEPOSITO",
@@ -17,7 +18,7 @@ export const schemaBase = z
       "CAMBIO_TURNO",
     ] as const),
     comentarioFinal: z.string().optional(),
-
+    efectivoContado: z.number().min(0, "Ingrese un efectivo contado válido"),
     cuentaBancariaId: z.number().optional(),
     montoParcial: z.number().optional(),
 

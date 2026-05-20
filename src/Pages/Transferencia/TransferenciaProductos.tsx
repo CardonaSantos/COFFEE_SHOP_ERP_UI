@@ -1,378 +1,225 @@
-import { useEffect, useState } from "react";
-import { Box, Building2, Layers2 } from "lucide-react";
-import SelectComponent, { SingleValue } from "react-select";
+import { useMemo, useState } from "react";
+import Select from "react-select";
+import { Box, Layers2, Building2 } from "lucide-react";
 
+import { useStore } from "@/components/Context/ContextSucursal";
 import { Button } from "@/components/ui/button";
-
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useStore } from "@/components/Context/ContextSucursal";
-import axios from "axios";
-import { toast } from "sonner";
+
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
+  useGetProductosTransferencia,
+  useGetSucursalesTransferencia,
+  useSolicitarTransferencia,
+} from "@/hooks/use-transferencias/use-transferencias";
+
+import { AdvancedDialog } from "@/utils/components/AdvancedDialog";
 import { PageTransition } from "@/components/Transition/layout-transition";
-const API_URL = import.meta.env.VITE_API_URL;
-
-interface Producto {
-  id: number;
-  nombre: string;
-  descripcion: string;
-  precioVenta: number;
-  codigoProducto: string;
-  stock: Array<{ sucursalId: number; cantidad: number }>;
-}
-
-interface Sucursal {
-  id: number;
-  nombre: string;
-}
-
-interface TransferenciaData {
-  productoId: number;
-  cantidad: number;
-  sucursalOrigenId: number;
-  sucursalDestinoId: number;
-  // usuarioEncargadoId: number | null;
-  usuarioSolicitanteId: number | null;
-}
 
 export default function TransferenciaProductos() {
-  const [selectedProduct, setSelectedProduct] = useState<Producto | null>(null);
-  const [selectedSucursalDestino, setSelectedSucursalDestino] =
-    useState<Sucursal | null>(null);
-  const [cantidad, setCantidad] = useState<number>(1);
+  const sucursalId = useStore((s) => s.sucursalId) ?? 0;
+  const userId = useStore((s) => s.userId);
 
-  const [openDialog, setOpenDialog] = useState(false);
-  const encargadoId = useStore((state) => state.userId);
+  const [openConfirm, setOpenConfirm] = useState(false);
 
-  const [truncar, setTruncar] = useState(false);
+  const { data: productos = [], isLoading: loadingProductos } =
+    useGetProductosTransferencia(sucursalId);
 
-  const handleSubmit = async () => {
-    try {
-      // Evita múltiples envíos
-      if (truncar) return;
+  const { data: sucursales = [] } = useGetSucursalesTransferencia();
 
-      setTruncar(true);
+  const { mutate: transferir, isPending } = useSolicitarTransferencia();
 
-      // Verifica si hay un producto y sucursal destino seleccionados
-      if (!selectedProduct || !selectedSucursalDestino) {
-        toast.error("Por favor selecciona un producto y una sucursal destino");
-        setTruncar(false); // Restablece el estado en caso de fallo
-        return;
-      }
+  const [producto, setProducto] = useState<any>(null);
+  const [destino, setDestino] = useState<any>(null);
+  const [cantidad, setCantidad] = useState(1);
 
-      // Busca la sucursal de origen que tenga stock disponible
-      const sucursalOrigen = selectedProduct.stock.find((s) => s.cantidad > 0);
-      if (!sucursalOrigen) {
-        toast.error("No hay stock disponible en la sucursal de origen");
-        setTruncar(false); // Restablece el estado en caso de fallo
-        return;
-      }
+  // === DERIVADOS ============================================================
+  const totalStock = useMemo(
+    () =>
+      producto?.stock?.reduce((acc: number, s: any) => acc + s.cantidad, 0) ??
+      0,
+    [producto],
+  );
 
-      // Prepara los datos de transferencia
-      const transferenciaData: TransferenciaData = {
-        productoId: selectedProduct.id,
-        cantidad,
-        sucursalOrigenId: sucursalOrigen.sucursalId,
-        sucursalDestinoId: selectedSucursalDestino.id,
-        usuarioSolicitanteId: encargadoId, // ID de usuario fijo para este ejemplo
-      };
-      const response = await axios.post(
-        `${API_URL}/solicitud-transferencia-producto`,
-        transferenciaData,
-      );
+  const origen = useMemo(
+    () => producto?.stock?.find((s: any) => s.cantidad > 0),
+    [producto],
+  );
 
-      if (response.status === 201) {
-        toast.success(
-          "Solicitud de transferencia enviada. Esperando respuesta del administrador.",
-        );
-        getProductos(); // Actualiza los productos después de la transferencia
+  const canSubmit =
+    producto && destino && cantidad > 0 && cantidad <= totalStock && !isPending;
 
-        console.log("Datos de transferencia:", transferenciaData);
+  // === HANDLERS ============================================================
 
-        // Restablece los estados
-        setOpenDialog(false);
-        setSelectedProduct(null);
-        setSelectedSucursalDestino(null);
-        setCantidad(1);
-      } else {
-        throw new Error("Error en la transferencia");
-      }
-    } catch (error) {
-      console.error("Error al transferir el producto:", error);
-      toast.error(
-        "Error al solicitar transferencia. Por favor, intenta de nuevo.",
-      );
-    } finally {
-      // Restablece el estado de truncar independientemente de si hubo éxito o error
-      setTruncar(false);
-    }
+  const resetForm = () => {
+    setProducto(null);
+    setDestino(null);
+    setCantidad(1);
   };
 
-  const sucursalId = useStore((state) => state.sucursalId);
-  const [productos, setProductos] = useState<Producto[] | null>(null);
-  const [sucursales, setSucursales] = useState<Sucursal[]>([]); // Array vacío por defecto
+  const handleSubmit = () => {
+    if (!canSubmit || !origen) return;
 
-  const getProductos = async () => {
-    try {
-      const response = await axios.get(
-        `${API_URL}/products/products/to-transfer/${sucursalId}`,
-      );
-      if (response.status === 200) {
-        setProductos(response.data);
-      }
-    } catch (error) {
-      console.log(error);
-      toast.error("Error al conseguir productos");
-    }
+    transferir({
+      productoId: producto.id,
+      cantidad,
+      sucursalOrigenId: origen.sucursalId,
+      sucursalDestinoId: destino.id,
+      usuarioSolicitanteId: userId,
+    });
+
+    resetForm();
+    setOpenConfirm(false);
   };
-  //
-  useEffect(() => {
-    const getProductos = async () => {
-      try {
-        const response = await axios.get(
-          `${API_URL}/products/products/to-transfer/${sucursalId}`,
-        );
-        if (response.status === 200) {
-          setProductos(response.data);
-        }
-      } catch (error) {
-        console.log(error);
-        toast.error("Error al conseguir productos");
-      }
-    };
-    if (sucursalId) {
-      getProductos();
-    }
-  }, [sucursalId]);
 
-  useEffect(() => {
-    const getSucursales = async () => {
-      try {
-        const response = await axios.get(
-          `${API_URL}/sucursales/sucursales-to-transfer`,
-        );
-        if (response.status === 200) {
-          setSucursales(response.data);
-        }
-      } catch (error) {
-        console.log(error);
-        toast.error("Error al conseguir productos");
-      }
-    };
-    getSucursales();
-  }, []);
-  console.log("Las sucursales son: ", sucursales);
-  console.log("Los productos son: ", productos);
-  console.log("EL id seleccionado es: ", selectedProduct);
+  // === OPTIONS =============================================================
 
-  // Opciones para productos
-  const productosOptions = productos?.map((producto) => ({
-    value: producto.id,
-    label: `${producto.nombre} (${producto.codigoProducto})`,
-    stock: producto.stock, // Incluimos stock para su uso posterior
+  const productosOptions = productos.map((p: any) => ({
+    value: p.id,
+    label: `${p.nombre} (${p.codigoProducto})`,
   }));
 
-  // Opciones para sucursales
   const sucursalesOptions = sucursales
-    ?.filter((sucursal) => sucursal.id !== sucursalId) // Excluir sucursal origen
-    .map((sucursal) => ({
-      value: sucursal.id,
-      label: sucursal.nombre,
+    .filter((s: any) => s.id !== sucursalId)
+    .map((s: any) => ({
+      value: s.id,
+      label: s.nombre,
     }));
 
-  const handleProductChange = (
-    option: SingleValue<{ value: number; label: string }>,
-  ) => {
-    if (option) {
-      const productoSeleccionado = productos?.find(
-        (prod) => prod.id === option.value,
-      );
-      setSelectedProduct(productoSeleccionado || null);
-    } else {
-      setSelectedProduct(null); // Limpia la selección si `option` es null
-    }
-  };
-
-  const handleSucursalChange = (
-    option: SingleValue<{ value: number; label: string }>,
-  ) => {
-    if (option) {
-      const sucursalSeleccionada = sucursales.find(
-        (suc) => suc.id === option.value,
-      );
-      setSelectedSucursalDestino(sucursalSeleccionada || null);
-    } else {
-      setSelectedSucursalDestino(null); // Limpia la selección si `option` es null
-    }
-  };
+  // === UI ==================================================================
 
   return (
     <PageTransition fallbackBackTo="/" titleHeader="Transferencia Productos">
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="producto-select">Seleccionar Producto</Label>
-          <SelectComponent
-            className="text-black"
-            isClearable={true}
-            id="producto-select"
-            options={productosOptions}
-            value={
-              selectedProduct
-                ? { value: selectedProduct.id, label: selectedProduct.nombre }
-                : null
-            }
-            onChange={handleProductChange}
-            placeholder="Buscar producto..."
-            classNamePrefix="react-select"
-          />
-        </div>
-
-        <Card className="">
-          <CardHeader className="  p-4 rounded-t-md">
-            <CardDescription className="text-md text-center">
-              La cantidad a transferir no debe ser mayor a la disponible
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-4">
-            {selectedProduct ? (
-              <div className="text-center">
-                <h2 className="text-xl font-semibold">
-                  Total en Stocks:{" "}
-                  {selectedProduct.stock.reduce(
-                    (total, stock) => total + stock.cantidad,
-                    0,
-                  )}
-                </h2>
-              </div>
-            ) : (
-              <div className="text-center text-gray-500">
-                <h2 className="text-xl font-semibold">
-                  Seleccione un producto para ver la cantidad disponible
-                </h2>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-2">
-          <Label htmlFor="cantidad">Cantidad a transferir</Label>
-          <Input
-            id="cantidad"
-            type="number"
-            value={cantidad}
-            onChange={(e) => setCantidad(Number(e.target.value))}
-            min={1}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="sucursal-select">Seleccionar Sucursal</Label>
-          <SelectComponent
-            className="text-black"
-            isClearable={true}
-            id="sucursal-select"
-            options={sucursalesOptions}
-            value={
-              selectedSucursalDestino
-                ? {
-                    value: selectedSucursalDestino.id,
-                    label: selectedSucursalDestino.nombre,
-                  }
-                : null
-            }
-            onChange={handleSucursalChange}
-            placeholder="Buscar sucursal..."
-            classNamePrefix="react-select"
-          />
-        </div>
-
-        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-          <DialogTrigger asChild>
-            <Button
-              className="w-full"
-              disabled={
-                !selectedProduct || !selectedSucursalDestino || cantidad < 1
+      <div className="w-full space-y-4 p-4">
+        {/* GRID RESPONSIVO */}
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Producto */}
+          <div className="space-y-1">
+            <Label>Producto</Label>
+            <Select
+              isClearable
+              isLoading={loadingProductos}
+              options={productosOptions}
+              value={
+                producto
+                  ? {
+                      value: producto.id,
+                      label: `${producto.nombre} (${producto.codigoProducto})`,
+                    }
+                  : null
               }
-            >
-              Enviar solicitud
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle className="text-center">
-                Solicitar Transferencia
-              </DialogTitle>
-              <DialogDescription className="text-center">
-                ¿Estás seguro de querer transferir este producto?
-              </DialogDescription>
-            </DialogHeader>
+              onChange={(opt) =>
+                setProducto(productos.find((p: any) => p.id === opt?.value))
+              }
+              placeholder="Seleccionar producto..."
+            />
+          </div>
 
-            <div className="grid gap-6 py-6">
-              {/* Producto */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="producto" className="text-right">
-                    Producto
-                  </Label>
-                  <Box />
-                </div>
-                <div id="producto" className="text-right">
-                  {selectedProduct?.nombre}
-                </div>
-              </div>
+          {/* Destino */}
+          <div className="space-y-1">
+            <Label>Sucursal destino</Label>
 
-              {/* Cantidad */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="cantidad" className="text-right">
-                    Cantidad
-                  </Label>
-                  <Layers2 />
-                </div>
-                <div id="cantidad" className="text-right">
-                  {cantidad}
-                </div>
-              </div>
+            <Select
+              isClearable
+              isLoading={loadingProductos}
+              options={sucursalesOptions}
+              value={
+                destino
+                  ? {
+                      value: destino.id,
+                      label: `${destino.nombre}`,
+                    }
+                  : null
+              }
+              onChange={(opt) =>
+                setDestino(sucursales.find((p: any) => p.id === opt?.value))
+              }
+              placeholder="Seleccionar producto..."
+            />
+          </div>
+        </div>
 
-              {/* Destino */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="destino" className="text-right">
-                    Destino
-                  </Label>
-                  <Building2 width={20} />
-                </div>
-                <div id="destino" className="text-right">
-                  {selectedSucursalDestino?.nombre}
-                </div>
-              </div>
+        {/* STOCK + CANTIDAD */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex items-center justify-between border rounded p-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Box size={16} />
+              <span>Stock disponible</span>
+            </div>
+            <span className="font-medium">{producto ? totalStock : "--"}</span>
+          </div>
+
+          <div className="space-y-1">
+            <Label>Cantidad</Label>
+            <div className="flex items-center gap-2">
+              <Layers2 size={16} />
+              <Input
+                type="number"
+                min={1}
+                max={totalStock || 1}
+                value={cantidad}
+                onChange={(e) => setCantidad(Number(e.target.value))}
+              />
             </div>
 
-            <DialogFooter className="flex justify-center">
-              <Button
-                className="w-full"
-                disabled={truncar}
-                onClick={handleSubmit}
-              >
-                Si, confirmar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            {cantidad > totalStock && (
+              <p className="text-xs text-red-500">
+                La cantidad excede el stock disponible
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* RESUMEN */}
+        {(producto || destino) && (
+          <div className="border rounded p-3 text-sm space-y-2">
+            <div className="flex justify-between">
+              <span>Producto</span>
+              <span>{producto?.nombre ?? "--"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Cantidad</span>
+              <span>{cantidad}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="flex items-center gap-1">
+                <Building2 size={14} />
+                Destino
+              </span>
+              <span>{destino?.nombre ?? "--"}</span>
+            </div>
+          </div>
+        )}
+
+        {/* ACCIÓN */}
+        <Button
+          className="w-full"
+          disabled={!canSubmit}
+          onClick={() => setOpenConfirm(true)}
+        >
+          Solicitar transferencia
+        </Button>
+
+        {/* DIALOG */}
+        <AdvancedDialog
+          open={openConfirm}
+          onOpenChange={setOpenConfirm}
+          title="Solicitar transferencia de producto"
+          subtitle="Confirma los datos antes de enviar"
+          description="Se generará una solicitud pendiente de aprobación. El inventario no será afectado hasta su autorización."
+          cancelButton={{
+            label: "Volver",
+            disabled: isPending,
+            onClick: () => setOpenConfirm(false),
+          }}
+          confirmButton={{
+            label: "Confirmar solicitud",
+            disabled: !canSubmit,
+            onClick: handleSubmit,
+            loadingText: "Enviando solicitud...",
+            loading: isPending,
+          }}
+        />
       </div>
     </PageTransition>
   );

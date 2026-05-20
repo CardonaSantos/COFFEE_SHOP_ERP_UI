@@ -6,4 +6,7 @@ export interface QueryTable {
   tiposPresentacion: number[];
   precio?: string;
   categorias: number[];
+  // paginacion
+  page: number;
+  limit: number;
 }

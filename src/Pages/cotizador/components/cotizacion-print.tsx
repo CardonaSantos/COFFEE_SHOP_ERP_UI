@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 import { costoAdicional } from "../page";
 import logo from "@/assets/NOVAPOSPNG.png";
 import { CartItem } from "@/Types/POS/interfaces";
+import { Sucursal } from "@/Types/Sucursal/Sucursal_Info";
 
 interface Props {
   cart: CartItem[];
@@ -15,11 +16,13 @@ interface Props {
   comentario: string;
   formatCurrency: (n: number) => string;
   costos_adicionales: Array<costoAdicional>;
+  sucursal: Sucursal;
 }
 
 const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
   const {
     cart,
+    sucursal,
     cliente,
     totalCarrito,
     totalDescuento,
@@ -35,9 +38,14 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
   const today = new Date();
   const fechaStr = today.toLocaleDateString("es-GT");
 
-  const VERDE = "#2d6a4f";
-  const VERDE2 = "#40916c";
-  const ROJO = "#c1121f";
+  // const VERDE = "#A24BA1"; // morado principal del logo
+  // const VERDE2 = "#C47CC6"; // morado claro / fondo
+  const ROJO = "#F5F5F5"; // rosa/fucsia del logo
+
+  const VERDE = "#2DBE8D"; // verde principal (V y NOVA)
+  const VERDE2 = "#7ED8B8"; // verde claro (variación / hover / fondos suaves)
+  // const NEGRO = "#0A0A0A"; // negro del logo
+  // const GRIS = "#F5F5F5"; // fondo claro
 
   return (
     <div
@@ -83,7 +91,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               lineHeight: 1.1,
             }}
           >
-            Nova Sistemas S.A.
+            {sucursal.nombre ?? "N/A"}
           </h1>
           <p
             style={{
@@ -93,11 +101,9 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               lineHeight: 1.6,
             }}
           >
-            Oficina Frente al Cementerio, Cantón Parroquia.
+            {sucursal.direccion ?? "N/A"}
             <br />
-            13007 Jacaltenango, Huehuetenango
-            <br />
-            Tel: 53752853 &nbsp; PBX: 22968040
+            Contacto: {sucursal.telefono ?? "N/A"} &nbsp; PBX: {sucursal.pbx}
           </p>
         </div>
         <img

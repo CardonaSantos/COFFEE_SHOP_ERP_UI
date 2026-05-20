@@ -133,7 +133,6 @@ export function BasicInfoForm({
               getValue={(t) => t.id}
               value={value.tipoPresentacion ?? null}
               onChange={(opt) =>
-                // ✅ una sola actualización con ambos campos
                 patch({
                   tipoPresentacionId: opt ? opt.id : null,
                   tipoPresentacion: opt ?? null,
@@ -142,8 +141,8 @@ export function BasicInfoForm({
               placeholder="Selecciona un tipo"
               selectProps={{
                 isSearchable: true,
-                isClearable: true, // al limpiar deja en null ambos campos
-                menuPortalTarget: document.body, // opcional: z-index seguro
+                isClearable: true,
+                menuPortalTarget: document.body,
               }}
             />
           </div>

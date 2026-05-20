@@ -97,6 +97,7 @@ import CostoPresupuestalMainPage from "./Pages/costo_presupuestal/page";
 import { PresupuestoDetallePage } from "./Pages/costo_presupuestal/components/presupuestos/details/page";
 import { CreatePresupuestoForm } from "./Pages/costo_presupuestal/components/presupuestos/form/presupuesto-form";
 import ContabilidadPage from "./Pages/contabilidad/contabilidad-page";
+import DashboardAnalitycs from "./Pages/dashboard-analitycs/page";
 
 function App() {
   const { checkAuth } = useAuthStore();
@@ -143,6 +144,15 @@ function App() {
           <Route element={<Layout2 />}>
             <Route
               path="/dashboard"
+              element={
+                <ProtectRouteAdmin>
+                  <DashboardAnalitycs />
+                </ProtectRouteAdmin>
+              }
+            />
+
+            <Route
+              path="/centro-acciones"
               element={
                 <ProtectRouteAdmin>
                   <DashboardPageMain />

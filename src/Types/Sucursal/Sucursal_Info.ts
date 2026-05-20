@@ -3,6 +3,7 @@ export interface Sucursal {
   nombre: string;
   direccion: string;
   telefono: string;
+  pbx: string;
   creadoEn: string; // Puedes usar 'Date' si lo parseas como fecha
   actualizadoEn: string; // Igual aquí, 'Date' si prefieres parsearlo
   tipoSucursal:

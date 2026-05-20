@@ -1,4 +1,5 @@
-// ====== cierres.types.ts ======
+// types/cierres.types.ts
+
 export type ModoCierre =
   | "SIN_DEPOSITO"
   | "DEPOSITO_AUTO"
@@ -8,34 +9,64 @@ export type ModoCierre =
 
 export interface PreviaCierreResponse {
   registroCajaId: number;
-  enCaja: number; // saldoInicial + Σ deltaCaja del turno
-  fondoFijoActual: number; // del turno
-  sugeridoDepositarAuto: number; // enCaja - fondoFijoActual (>=0)
-  puedeDepositarHasta: number; // = enCaja
+  sucursalId: number;
+  saldoInicial: number;
+  enCaja: number;
+  enCajaOperable: number;
+  fondoFijoActual: number;
+  sugeridoDepositarAuto: number;
+  puedeDepositarHasta: number;
+  desglose?: {
+    ingresosEfectivo: number;
+    egresosEfectivo: number;
+    depositosCierre: number;
+  };
+  warnings?: string[];
+  timestamp?: string;
 }
 
-export interface CerrarCajaV2Dto {
+export interface CerrarCajaV3Dto {
   registroCajaId: number;
   usuarioCierreId: number;
   comentarioFinal?: string;
 
   modo: ModoCierre;
 
-  // si hay depósito:
-  cuentaBancariaId?: number;
-  montoParcial?: number; // solo en DEPOSITO_PARCIAL
-  objetivoFondo?: number; // si DEPOSITO_AUTO/CAMBIO_TURNO (default: fondoFijo)
+  efectivoContado?: number;
 
-  // si CAMBIO_TURNO:
-  abrirSiguiente?: boolean; // default true en CAMBIO_TURNO
+  cuentaBancariaId?: number;
+  montoParcial?: number;
+  objetivoFondo?: number;
+
+  abrirSiguiente?: boolean;
   usuarioInicioSiguienteId?: number;
   fondoFijoSiguiente?: number;
   comentarioAperturaSiguiente?: string;
 }
 
-export interface CerrarCajaV2Response {
-  turnoCerrado: { id: number; saldoFinal: number; depositoRealizado: number };
-  movimientoDeposito?: { id: number };
-  nuevoTurno?: { id: number; saldoInicial: number };
-  enCajaAntes: number;
+export interface CerrarCajaV3Response {
+  turnoCerrado: {
+    id: number;
+    saldoFinal: number;
+    depositoRealizado: number;
+    efectivoContado: number | null;
+    diferenciaCaja: number | null;
+    estadoCuadre: "CUADRA" | "SOBRANTE" | "FALTANTE" | null;
+  };
+  movimientos?: {
+    deposito?: { id: number } | null;
+  };
+  cajas?: {
+    enCajaAntes: number;
+    baseDejada: number;
+    disponibleParaDepositar: number;
+  };
+  ventas?: {
+    efectivoTurno: number;
+  };
+  nuevoTurno?: {
+    id: number;
+    saldoInicial: number;
+  } | null;
+  warnings: string[];
 }

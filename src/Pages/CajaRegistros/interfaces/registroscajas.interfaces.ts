@@ -84,6 +84,12 @@ export interface SucursalCaja {
   nombre: string;
 }
 
+export enum EstadoCuadreCaja {
+  CUADRA = "CUADRA",
+  SOBRANTE = "SOBRANTE",
+  FALTANTE = "FALTANTE",
+}
+
 export interface RegistroCajaResponse {
   id: number;
   creadoEn: string;
@@ -92,6 +98,13 @@ export interface RegistroCajaResponse {
   comentarioFinal: string | null;
   depositado: boolean;
   estado: string;
+
+  estadoCuadre: EstadoCuadreCaja;
+
+  efectivoContado: number;
+  diferenciaCaja: number; // string
+  comentarioCuadre: string; // string
+
   fechaApertura: string;
   fechaCierre: string;
   movimientoCaja: any | null; // si en el futuro quieres tiparlo, aquí
