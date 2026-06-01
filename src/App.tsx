@@ -98,6 +98,7 @@ import { PresupuestoDetallePage } from "./Pages/costo_presupuestal/components/pr
 import { CreatePresupuestoForm } from "./Pages/costo_presupuestal/components/presupuestos/form/presupuesto-form";
 import ContabilidadPage from "./Pages/contabilidad/contabilidad-page";
 import DashboardAnalitycs from "./Pages/dashboard-analitycs/page";
+import WhatsappTemplatesPage from "./Pages/whatsapp-campaing/page";
 
 function App() {
   const { checkAuth } = useAuthStore();
@@ -831,6 +832,16 @@ function App() {
                 </ProtectRouteAdmin>
               }
             />
+
+            <Route
+              path="/whatsapp-campaing-templates"
+              element={
+                <ProtectRouteAdmin>
+                  <WhatsappTemplatesPage />
+                </ProtectRouteAdmin>
+              }
+            />
+
             {/* RUTAS PARA EL CRM */}
           </Route>
         </Routes>

@@ -34,6 +34,7 @@ import {
   FileSignature,
   ChartScatter,
   LayoutDashboard,
+  Smartphone,
 } from "lucide-react";
 
 import {
@@ -273,6 +274,19 @@ const menuItemsAdmin = [
     submenu: [
       { icon: Target, label: "Metas Generales", href: "/metas" },
       { icon: Goal, label: "Mis Metas", href: "/mis-metas" },
+    ],
+  },
+
+  {
+    icon: Target,
+    label: "Whatsapp",
+    submenu: [
+      {
+        icon: Smartphone,
+        label: "Plantillas",
+        href: "/whatsapp-campaing-templates",
+      },
+      // { icon: Goal, label: "Mis Metas", href: "/mis-metas" },
     ],
   },
 
