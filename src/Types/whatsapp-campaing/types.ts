@@ -228,24 +228,24 @@ export interface WhatsappTemplateExample {
   [key: string]: unknown;
 }
 
-export interface WhatsappTemplateButton {
-  type: WhatsappTemplateButtonType;
-  text: string;
-  url?: string;
-  phone_number?: string;
-  example?: string[];
-  [key: string]: unknown;
-}
+// export interface WhatsappTemplateButton {
+//   type: WhatsappTemplateButtonType;
+//   text: string;
+//   url?: string;
+//   phone_number?: string;
+//   example?: string[];
+//   [key: string]: unknown;
+// }
 
-export interface WhatsappTemplateComponent {
-  type: WhatsappTemplateComponentType;
-  format?: WhatsappTemplateHeaderFormat;
-  text?: string;
-  example?: WhatsappTemplateExample;
-  buttons?: WhatsappTemplateButton[];
-  cards?: unknown[];
-  [key: string]: unknown;
-}
+// export interface WhatsappTemplateComponent {
+//   type: WhatsappTemplateComponentType;
+//   format?: WhatsappTemplateHeaderFormat;
+//   text?: string;
+//   example?: WhatsappTemplateExample;
+//   buttons?: WhatsappTemplateButton[];
+//   cards?: unknown[];
+//   [key: string]: unknown;
+// }
 
 // ─── API DTOs ─────────────────────────────────────────────────────────────────
 
@@ -315,6 +315,22 @@ export interface TemplateVariable {
   value: string;
 }
 
+// export interface WhatsappTemplateCreateFormState {
+//   name: string;
+//   language: string;
+//   category: WhatsappTemplateCategory;
+//   headerEnabled: boolean;
+//   headerFormat: WhatsappTemplateHeaderFormat;
+//   headerText: string;
+//   headerHandle: string;
+//   bodyText: string;
+//   bodyVariables: TemplateVariable[];
+//   footerEnabled: boolean;
+//   footerText: string;
+//   buttonsEnabled: boolean;
+//   buttons: WhatsappTemplateButton[];
+// }
+
 export interface WhatsappTemplateCreateFormState {
   name: string;
   language: string;
@@ -323,12 +339,23 @@ export interface WhatsappTemplateCreateFormState {
   headerFormat: WhatsappTemplateHeaderFormat;
   headerText: string;
   headerHandle: string;
+  headerFileName?: string;
+  headerMimeType?: string;
+  headerFileSize?: number;
+  headerPreviewUrl?: string;
   bodyText: string;
   bodyVariables: TemplateVariable[];
   footerEnabled: boolean;
   footerText: string;
   buttonsEnabled: boolean;
   buttons: WhatsappTemplateButton[];
+}
+
+export interface WhatsappTemplateMediaHandleResponse {
+  handle: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
 }
 
 // ─── List-view UI state ───────────────────────────────────────────────────────
@@ -353,5 +380,47 @@ export type FormErrors = Partial<Record<string, string>>;
 
 export const LANGUAGES_LIST = ["es", "es_GT", "en_US"] as const;
 export const LANGUAGES_ALL = ["ALL", ...LANGUAGES_LIST] as const;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// ─── Campaign send ────────────────────────────────────────────────────────────
+
+export type CampaignSendMode = "ALL_VALID" | "SELECTED";
+
+export type PurchaseFilter = "all" | "with_purchases" | "without_purchases";
+export type PhoneFilter = "valid" | "invalid" | "all";
+
+export interface CampaignFiltersSnapshot {
+  search: string;
+  purchaseFilter: PurchaseFilter;
+  phoneFilter: PhoneFilter;
+  locationFilter: string;
+}
+
+export interface CampaignRecipient {
+  customerId: number;
+  fullName: string;
+  phone: string;
+}
+
+export interface CampaignEstimatedCost {
+  currency: "USD";
+  unitCost: number;
+  totalRecipients: number;
+  totalEstimated: number;
+}
+
+export interface CampaignPayload {
+  templateId: string;
+  templateName: string;
+  templateLanguage: string;
+  templateCategory: WhatsappTemplateCategory;
+  sendMode: CampaignSendMode;
+  customerIds: number[];
+  recipients: CampaignRecipient[];
+  estimatedCost: CampaignEstimatedCost;
+  filtersSnapshot: CampaignFiltersSnapshot;
+  createdAt: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

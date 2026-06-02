@@ -31,7 +31,7 @@ import { TemplatesPagination } from "./components/TemplatesPagination";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 async function fetchWhatsappTemplates(
   filters: Partial<WhatsappTemplateFilters>,
@@ -133,7 +133,7 @@ export default function WhatsappTemplatesPage() {
   };
 
   const handleNew = () => {
-    toast.info("Creación de plantillas próximamente");
+    // toast.info("Creación de plantillas próximamente");
   };
 
   const handleCopyName = (name: string) => {

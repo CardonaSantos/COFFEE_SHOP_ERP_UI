@@ -1,30 +1,30 @@
-"use client"
+"use client";
 
-import { FileText } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { FileText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import type { FormErrors } from "@/Types/whatsapp-campaing/types"
+} from "@/components/ui/select";
+import type { FormErrors } from "@/Types/whatsapp-campaing/types";
 
 const LANGUAGES = [
   { value: "es", label: "Español (es)" },
-  { value: "es_GT", label: "Español Guatemala (es_GT)" },
-  { value: "en_US", label: "Inglés EE.UU. (en_US)" },
-]
+  // { value: "es_GT", label: "Español Guatemala (es_GT)" },
+  // { value: "en_US", label: "Inglés EE.UU. (en_US)" },
+];
 
 interface TemplateBasicInfoCardProps {
-  name: string
-  language: string
-  errors: FormErrors
-  onNameChange: (v: string) => void
-  onLanguageChange: (v: string) => void
+  name: string;
+  language: string;
+  errors: FormErrors;
+  onNameChange: (v: string) => void;
+  onLanguageChange: (v: string) => void;
 }
 
 export function TemplateBasicInfoCard({
@@ -52,9 +52,10 @@ export function TemplateBasicInfoCard({
             id="tpl-name"
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            placeholder="recordatorio_pago_servicio"
+            placeholder="recordatorio_pago_servicio | Máximo 511 caracteres"
             className="h-8 text-xs font-mono"
             aria-invalid={!!errors.name}
+            maxLength={511}
           />
           {errors.name ? (
             <p className="text-xs text-destructive">{errors.name}</p>
@@ -88,5 +89,5 @@ export function TemplateBasicInfoCard({
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

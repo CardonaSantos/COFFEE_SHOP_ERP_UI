@@ -1,18 +1,21 @@
-"use client"
+"use client";
 
-import { MessageSquareText } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import type { TemplateVariable, FormErrors } from "@/Types/whatsapp-campaing/types"
+import { MessageSquareText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import type {
+  TemplateVariable,
+  FormErrors,
+} from "@/Types/whatsapp-campaing/types";
 
 interface TemplateBodyEditorCardProps {
-  bodyText: string
-  bodyVariables: TemplateVariable[]
-  errors: FormErrors
-  onBodyChange: (v: string) => void
-  onVariableChange: (index: number, value: string) => void
+  bodyText: string;
+  bodyVariables: TemplateVariable[];
+  errors: FormErrors;
+  onBodyChange: (v: string) => void;
+  onVariableChange: (index: number, value: string) => void;
 }
 
 export function TemplateBodyEditorCard({
@@ -27,15 +30,17 @@ export function TemplateBodyEditorCard({
       <CardHeader className="pb-3 pt-4 px-4">
         <CardTitle className="flex items-center gap-2 text-sm font-medium">
           <MessageSquareText className="size-4 text-muted-foreground" />
-          Cuerpo del mensaje <span className="text-destructive text-xs font-normal">*</span>
+          Cuerpo del mensaje{" "}
+          <span className="text-destructive text-xs font-normal">*</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
         <div className="space-y-1">
           <Textarea
+            maxLength={1023}
             value={bodyText}
             onChange={(e) => onBodyChange(e.target.value)}
-            placeholder={"Hola {{1}}, tu pago de {{2}} vence el {{3}}."}
+            placeholder={"Máximo 1023 caracteres"}
             className="text-xs min-h-[88px] resize-none leading-relaxed"
             aria-invalid={!!errors.bodyText}
           />
@@ -87,5 +92,5 @@ export function TemplateBodyEditorCard({
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

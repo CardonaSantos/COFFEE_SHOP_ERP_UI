@@ -2,9 +2,10 @@ import type {
   CreateWhatsappTemplateDto,
   CreateUtilityImageTemplateDto,
   MetaCreateTemplateResponse,
+  WhatsappTemplateMediaHandleResponse,
 } from "@/Types/whatsapp-campaing/types";
 
-const API_BASE_URL = "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 export async function createWhatsappTemplate(
   payload: CreateWhatsappTemplateDto,
@@ -49,4 +50,31 @@ export async function createUtilityImageTemplate(
   }
 
   return response.json() as Promise<MetaCreateTemplateResponse>;
+}
+
+export async function uploadWhatsappTemplateMediaHandle(
+  file: File,
+): Promise<WhatsappTemplateMediaHandleResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_BASE_URL}/whatsapp-template/media-handle`,
+    {
+      method: "POST",
+      body: formData,
+      // Do NOT set Content-Type; browser assigns the multipart boundary automatically.
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new Error(
+      errorBody?.message ??
+        errorBody?.meta?.error?.message ??
+        "No se pudo subir la imagen a Meta",
+    );
+  }
+
+  return response.json() as Promise<WhatsappTemplateMediaHandleResponse>;
 }

@@ -34,7 +34,6 @@ import {
   FileSignature,
   ChartScatter,
   LayoutDashboard,
-  Smartphone,
 } from "lucide-react";
 
 import {
@@ -65,6 +64,9 @@ import {
   CollapsibleTrigger,
 } from "../ui/collapsible";
 import { useMemo } from "react";
+import { WhatsappIcon } from "../icons/WhatsappIcon";
+import { MetaIcon } from "../icons/MetaIcon";
+import { MessageIcon } from "../icons/MessageIcon";
 
 export const menuVendedor = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
@@ -278,15 +280,19 @@ const menuItemsAdmin = [
   },
 
   {
-    icon: Target,
-    label: "Whatsapp",
+    icon: WhatsappIcon,
+    label: "Campañas WhatsApp",
     submenu: [
       {
-        icon: Smartphone,
-        label: "Plantillas",
-        href: "/whatsapp-campaing-templates",
+        icon: MetaIcon,
+        label: "Plantillas Meta",
+        href: "/whatsapp-campaign-templates",
       },
-      // { icon: Goal, label: "Mis Metas", href: "/mis-metas" },
+      {
+        icon: MessageIcon,
+        label: "Enviar campaña",
+        href: "/whatsapp-campaign-messaging",
+      },
     ],
   },
 

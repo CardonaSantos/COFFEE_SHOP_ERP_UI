@@ -12,11 +12,12 @@ import type {
   MetaCreateTemplateResponse,
   FormErrors,
   TemplateVariable,
+  WhatsappTemplateMediaHandleResponse,
 } from "@/Types/whatsapp-campaing/types";
 import {
   createUtilityImageTemplate,
   createWhatsappTemplate,
-} from "../whatsapp-create-template";
+} from "../services/services";
 
 // ─── Variable detection ───────────────────────────────────────────────────────
 
@@ -124,10 +125,12 @@ export function validateForm(
     if (form.headerFormat === "TEXT" && !form.headerText.trim()) {
       errors.headerText = "El texto del header es obligatorio.";
     }
+    if (form.headerFormat === "IMAGE" && !form.headerHandle.trim()) {
+      errors.headerHandle =
+        "Debes subir la imagen a Meta antes de enviar la plantilla a revisión.";
+    }
     if (
-      (form.headerFormat === "IMAGE" ||
-        form.headerFormat === "VIDEO" ||
-        form.headerFormat === "DOCUMENT") &&
+      (form.headerFormat === "VIDEO" || form.headerFormat === "DOCUMENT") &&
       !form.headerHandle.trim()
     ) {
       errors.headerHandle = "El media handle es obligatorio.";
@@ -205,6 +208,10 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
       headerFormat: value,
       headerText: "",
       headerHandle: "",
+      headerFileName: undefined,
+      headerMimeType: undefined,
+      headerFileSize: undefined,
+      headerPreviewUrl: undefined,
     }));
     setErrors((e) => ({
       ...e,
@@ -221,6 +228,32 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
   const setHeaderHandle = useCallback((value: string) => {
     setForm((f) => ({ ...f, headerHandle: value }));
     setErrors((e) => ({ ...e, headerHandle: undefined }));
+  }, []);
+
+  const setHeaderImageMeta = useCallback(
+    (response: WhatsappTemplateMediaHandleResponse, previewUrl: string) => {
+      setForm((f) => ({
+        ...f,
+        headerHandle: response.handle,
+        headerFileName: response.fileName,
+        headerMimeType: response.mimeType,
+        headerFileSize: response.size,
+        headerPreviewUrl: previewUrl,
+      }));
+      setErrors((e) => ({ ...e, headerHandle: undefined }));
+    },
+    [],
+  );
+
+  const clearHeaderImage = useCallback(() => {
+    setForm((f) => ({
+      ...f,
+      headerHandle: "",
+      headerFileName: undefined,
+      headerMimeType: undefined,
+      headerFileSize: undefined,
+      headerPreviewUrl: undefined,
+    }));
   }, []);
 
   const setBodyText = useCallback((value: string) => {
@@ -407,6 +440,8 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
     setHeaderFormat,
     setHeaderText,
     setHeaderHandle,
+    setHeaderImageMeta,
+    clearHeaderImage,
     setBodyText,
     setBodyVariableValue,
     setFooterEnabled,

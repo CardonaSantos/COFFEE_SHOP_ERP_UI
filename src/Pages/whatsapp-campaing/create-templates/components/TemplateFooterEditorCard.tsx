@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import { FileText } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import { FileText } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 interface TemplateFooterEditorCardProps {
-  footerEnabled: boolean
-  footerText: string
-  onToggle: (v: boolean) => void
-  onTextChange: (v: string) => void
+  footerEnabled: boolean;
+  footerText: string;
+  onToggle: (v: boolean) => void;
+  onTextChange: (v: string) => void;
 }
 
 export function TemplateFooterEditorCard({
@@ -25,7 +25,10 @@ export function TemplateFooterEditorCard({
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm font-medium">
             <FileText className="size-4 text-muted-foreground" />
-            Footer <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+            Footer{" "}
+            <span className="text-xs text-muted-foreground font-normal">
+              (opcional)
+            </span>
           </CardTitle>
           <Switch
             checked={footerEnabled}
@@ -41,13 +44,12 @@ export function TemplateFooterEditorCard({
           <Input
             value={footerText}
             onChange={(e) => onTextChange(e.target.value)}
-            placeholder="Gracias por preferirnos."
+            placeholder="Máximo 59 caracteres"
             className="h-8 text-xs"
-            maxLength={60}
+            maxLength={59}
           />
-          <p className="text-xs text-muted-foreground">Máximo 60 caracteres.</p>
         </CardContent>
       )}
     </Card>
-  )
+  );
 }

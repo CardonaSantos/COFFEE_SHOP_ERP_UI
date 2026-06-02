@@ -8,4 +8,7 @@ export interface ClientSelect {
   iPInternet: string;
   direccion: string;
   actualizadoEn: Date;
+  _count: {
+    compras: number;
+  };
 }
