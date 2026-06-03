@@ -17,14 +17,6 @@ export function TemplatesHeader({
 }: TemplatesHeaderProps) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="space-y-0.5">
-        <h1 className="text-base font-semibold text-foreground leading-tight">
-          Plantillas de WhatsApp
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          Consulta el estado de aprobación de tus plantillas en Meta.
-        </p>
-      </div>
       <div className="flex items-center gap-2">
         <Button
           variant="outline"

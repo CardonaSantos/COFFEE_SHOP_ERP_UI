@@ -22,8 +22,6 @@ import type {
   WhatsappTemplateButton,
 } from "@/Types/whatsapp-campaing/types";
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
 function renderBodyWithExamples(
   bodyText: string,
   variables: TemplateVariable[],
@@ -36,21 +34,15 @@ function renderBodyWithExamples(
   });
 }
 
-// ─── Button icon ──────────────────────────────────────────────────────────────
-
 function ButtonIcon({ type }: { type: WhatsappTemplateButton["type"] }) {
   if (type === "URL") return <ExternalLink className="size-3" />;
   if (type === "PHONE_NUMBER") return <Phone className="size-3" />;
   return <Reply className="size-3" />;
 }
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
 interface TemplateWhatsappPreviewCardProps {
   form: WhatsappTemplateCreateFormState;
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function TemplateWhatsappPreviewCard({
   form,

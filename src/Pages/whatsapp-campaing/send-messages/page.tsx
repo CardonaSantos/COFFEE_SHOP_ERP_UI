@@ -50,6 +50,10 @@ import { useClientes } from "@/hooks/use-clientes/use-clientes";
 import { ClientSelect } from "@/Types/clients/cliente-select";
 import { useWhatsappTemplates } from "@/hooks/use-whatsapp-template/use-whatsapp-template";
 import { useSendWhatsappCampaign } from "@/hooks/use-whatsapp-template/send-whatsapp-message-campaing";
+import { PageTransition } from "@/components/Transition/layout-transition";
+import { SelectedWhatsappTemplatePreview } from "./components/SelectedWhatsappTemplatePreview";
+import { toast } from "sonner";
+import { getApiErrorMessageAxios } from "@/Pages/Utils/UtilsErrorApi";
 
 type NormalizedCliente = ClientSelect & {
   fullName: string;
@@ -109,6 +113,7 @@ function getStatusLabel(status: string): string {
 }
 
 export function WhatsappMessaginCapaing() {
+  const [headerImageUrl, setHeaderImageUrl] = useState("");
   const sendCampaignMutation = useSendWhatsappCampaign();
   const { data: rawClients = [] } = useClientes();
   const [templateFilters, setTemplateFilters] =
@@ -140,6 +145,31 @@ export function WhatsappMessaginCapaing() {
   const [simulateQty, setSimulateQty] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [payloadOpen, setPayloadOpen] = useState(false);
+
+  const handleResetAfterSuccess = useCallback(() => {
+    setSelectedTemplate(null);
+    setSendMode("SELECTED");
+    setSelectedIds(new Set<number>());
+    setSelectionTab("select");
+
+    setSearch("");
+    setPurchaseFilter("all");
+    setPhoneFilter("valid");
+    setLocationFilter("");
+
+    setSimulateQty("");
+    setHeaderImageUrl("");
+
+    setConfirmOpen(false);
+    setPayloadOpen(false);
+
+    setTemplateFilters({
+      name: "",
+      language: "ALL",
+      category: "ALL",
+      status: "APPROVED",
+    });
+  }, []);
 
   const normalizedClients = useMemo<NormalizedCliente[]>(
     () =>
@@ -230,14 +260,28 @@ export function WhatsappMessaginCapaing() {
     return isNaN(qty) || qty <= 0 ? null : qty * unitCost;
   }, [simulateQty, unitCost]);
 
-  // ── Payload ────────────────────────────────────────────────────────────────
+  const selectedTemplateHeader = useMemo(() => {
+    return selectedTemplate?.components?.find(
+      (component) => component.type?.toUpperCase() === "HEADER",
+    );
+  }, [selectedTemplate]);
+
+  const selectedTemplateNeedsImage = selectedTemplateHeader?.format === "IMAGE";
+
   const payload = useMemo<CampaignPayload | null>(() => {
     if (!selectedTemplate) return null;
+
     return {
       templateId: selectedTemplate.id,
       templateName: selectedTemplate.name,
       templateLanguage: selectedTemplate.language,
       templateCategory: selectedTemplate.category as WhatsappTemplateCategory,
+
+      headerImageUrl:
+        selectedTemplateNeedsImage && headerImageUrl.trim()
+          ? headerImageUrl.trim()
+          : undefined,
+
       sendMode,
       customerIds: selectedClients.map((c) => c.id),
       recipients: selectedClients.map((c) => ({
@@ -251,11 +295,18 @@ export function WhatsappMessaginCapaing() {
         totalRecipients: selectedClients.length,
         totalEstimated,
       },
-      filtersSnapshot: { search, purchaseFilter, phoneFilter, locationFilter },
+      filtersSnapshot: {
+        search,
+        purchaseFilter,
+        phoneFilter,
+        locationFilter,
+      },
       createdAt: new Date().toISOString(),
     };
   }, [
     selectedTemplate,
+    selectedTemplateNeedsImage,
+    headerImageUrl,
     sendMode,
     selectedClients,
     unitCost,
@@ -309,19 +360,38 @@ export function WhatsappMessaginCapaing() {
     phoneFilter !== "valid" ||
     locationFilter !== "";
 
-  const handleConfirmSend = useCallback(() => {
+  const handleConfirmSend = useCallback(async () => {
     if (!payload) return;
 
-    sendCampaignMutation.mutate(payload, {
-      onSuccess: (response) => {
-        console.log("Campaña enviada", response);
-        setConfirmOpen(false);
-      },
-      onError: (error) => {
-        console.error("Error enviando campaña", error);
-      },
-    });
-  }, [payload, sendCampaignMutation]);
+    const totalRecipients = payload.recipients.length;
+
+    try {
+      const response = await toast.promise(
+        sendCampaignMutation.mutateAsync(payload),
+        {
+          loading: `Enviando campaña a ${totalRecipients} cliente(s)...`,
+          success: (response) => {
+            const sent = response?.sent ?? 0;
+            const failed = response?.failed ?? 0;
+
+            if (failed > 0) {
+              return `Campaña procesada: ${sent} enviado(s), ${failed} fallido(s)`;
+            }
+
+            return `Campaña enviada correctamente a ${sent} cliente(s)`;
+          },
+          error: (error) => getApiErrorMessageAxios(error),
+        },
+      );
+
+      console.log("Campaña enviada", response);
+
+      setConfirmOpen(false);
+      handleResetAfterSuccess();
+    } catch (error) {
+      console.error("Error enviando campaña", error);
+    }
+  }, [payload, sendCampaignMutation, handleResetAfterSuccess]);
 
   const selectOptions = useMemo(
     () =>
@@ -348,588 +418,622 @@ export function WhatsappMessaginCapaing() {
     tableValidClients.length > 0 &&
     tableValidClients.every((c) => effectiveSelectedIds.has(c.id));
 
+  // console.log(
+  //   "La template seleccionada es: ",
+  //   selectedTemplate?.components[0].example?.header_handle[0],
+  // );
+  console.log("Las templates son: ", templates);
+  console.log("La selectedTemplate: ", selectedTemplate);
+
   return (
-    <div className="p-4 space-y-3 max-w-screen-xl mx-auto">
-      {/* Header */}
-      <div>
-        <h1 className="text-sm font-semibold text-foreground">
-          Enviar campaña WhatsApp
-        </h1>
-        <p className="text-xs text-muted-foreground">
-          Selecciona una plantilla aprobada y los destinatarios antes de enviar.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3 items-start">
-        {/* ── Columna izquierda ─────────────────────────────────────────────── */}
-        <div className="space-y-3">
-          <Card>
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-xs font-semibold">Plantilla</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0 space-y-2">
-              {templatesLoading ? (
-                <p className="text-xs text-muted-foreground">
-                  Cargando plantillas...
-                </p>
-              ) : (
-                <div className="grid gap-2">
-                  <Select
-                    value={selectedTemplate?.id ?? ""}
-                    onValueChange={(id) => {
-                      const tpl = templates.find((t) => t.id === id) ?? null;
-                      setSelectedTemplate(tpl);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Seleccionar plantilla..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {templates.map((tpl) => (
-                        <SelectItem
-                          key={tpl.id}
-                          value={tpl.id}
-                          className="text-xs"
-                        >
-                          <span className="flex items-center gap-2">
-                            <span className="font-mono">{tpl.name}</span>
-                            <Badge
-                              variant={getStatusBadgeVariant(tpl.status)}
-                              className="text-[10px] py-0 h-4"
-                            >
-                              {getStatusLabel(tpl.status)}
-                            </Badge>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {selectedTemplate && (
-                    <div className="rounded-md border bg-muted/40 p-2 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-mono font-medium">
-                          {selectedTemplate.name}
-                        </span>
-                        <Badge
-                          variant={getStatusBadgeVariant(
-                            selectedTemplate.status,
-                          )}
-                          className="text-[10px] py-0 h-4"
-                        >
-                          {getStatusLabel(selectedTemplate.status)}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] py-0 h-4"
-                        >
-                          {getCategoryLabel(
-                            selectedTemplate.category as WhatsappTemplateCategory,
-                          )}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] py-0 h-4"
-                        >
-                          {selectedTemplate.language}
-                        </Badge>
-                      </div>
-                      {selectedTemplate.status !== "APPROVED" && (
-                        <p className="text-[11px] text-destructive flex items-center gap-1">
-                          <AlertTriangle className="size-3" />
-                          Solo se pueden enviar plantillas aprobadas.
-                        </p>
-                      )}
-                      <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                        {getBodyPreview(selectedTemplate)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-xs font-semibold">
-                Destinatarios
-              </CardTitle>
-              {/* Modo ALL_VALID */}
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="all-valid"
-                  checked={sendMode === "ALL_VALID"}
-                  onCheckedChange={(v) =>
-                    setSendMode(v ? "ALL_VALID" : "SELECTED")
-                  }
-                />
-                <Label htmlFor="all-valid" className="text-xs cursor-pointer">
-                  Todos los válidos ({validClients.length})
-                </Label>
-              </div>
-            </CardHeader>
-            <CardContent className="p-3 pt-0 space-y-2">
-              {sendMode === "ALL_VALID" && (
-                <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 p-2">
-                  <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-                  <p className="text-[11px] text-amber-800">
-                    Se enviará a todos los {validClients.length} clientes con
-                    teléfono válido. Puede generar costo alto.
+    <PageTransition fallbackBackTo="/" titleHeader="Envio de campañas">
+      <div className="">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3 items-start">
+          {/* ── Columna izquierda ─────────────────────────────────────────────── */}
+          <div className="space-y-3">
+            <Card>
+              <CardHeader className="p-3 pb-2">
+                <CardTitle className="text-xs font-semibold">
+                  Plantilla
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 pt-0 space-y-2">
+                {templatesLoading ? (
+                  <p className="text-xs text-muted-foreground">
+                    Cargando plantillas...
                   </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Input
-                  placeholder="Buscar..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-7 text-xs col-span-2"
-                />
-                <Input
-                  placeholder="Localidad..."
-                  value={locationFilter}
-                  onChange={(e) => setLocationFilter(e.target.value)}
-                  className="h-7 text-xs"
-                />
-                <div className="flex gap-1">
-                  <Select
-                    value={purchaseFilter}
-                    onValueChange={(v) =>
-                      setPurchaseFilter(v as PurchaseFilter)
-                    }
-                  >
-                    <SelectTrigger className="h-7 text-xs flex-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className="text-xs">
-                        Todas las compras
-                      </SelectItem>
-                      <SelectItem value="with_purchases" className="text-xs">
-                        Con compras
-                      </SelectItem>
-                      <SelectItem value="without_purchases" className="text-xs">
-                        Sin compras
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex gap-1 items-center">
-                  <Label className="text-xs text-muted-foreground">
-                    Teléfono:
-                  </Label>
-                  {(["valid", "invalid", "all"] as PhoneFilter[]).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setPhoneFilter(f)}
-                      className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
-                        phoneFilter === f
-                          ? "bg-foreground text-background border-foreground"
-                          : "border-border text-muted-foreground hover:border-foreground"
-                      }`}
+                ) : (
+                  <div className="grid gap-2">
+                    <Select
+                      value={selectedTemplate?.id ?? ""}
+                      onValueChange={(id) => {
+                        const tpl = templates.find((t) => t.id === id) ?? null;
+                        setSelectedTemplate(tpl);
+                      }}
                     >
-                      {f === "valid"
-                        ? "Válidos"
-                        : f === "invalid"
-                          ? "Inválidos"
-                          : "Todos"}
-                    </button>
-                  ))}
-                </div>
-                {hasActiveFilters && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs px-2 ml-auto"
-                    onClick={handleClearFilters}
-                  >
-                    <X className="size-3 mr-1" />
-                    Limpiar
-                  </Button>
-                )}
-              </div>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Seleccionar plantilla..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates.map((tpl) => (
+                          <SelectItem
+                            key={tpl.id}
+                            value={tpl.id}
+                            className="text-xs"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="font-mono">{tpl.name}</span>
+                              <Badge
+                                variant={getStatusBadgeVariant(tpl.status)}
+                                className="text-[10px] py-0 h-4"
+                              >
+                                {getStatusLabel(tpl.status)}
+                              </Badge>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-              {sendMode === "SELECTED" && (
-                <Tabs
-                  value={selectionTab}
-                  onValueChange={(v) =>
-                    setSelectionTab(v as "select" | "table")
-                  }
-                >
-                  <TabsList className="h-7 text-xs">
-                    <TabsTrigger value="select" className="text-xs h-6 gap-1">
-                      <LayoutList className="size-3" />
-                      Buscador
-                    </TabsTrigger>
-                    <TabsTrigger value="table" className="text-xs h-6 gap-1">
-                      <Table2 className="size-3" />
-                      Tabla
-                    </TabsTrigger>
-                  </TabsList>
-
-                  {/* React Select multi */}
-                  <TabsContent value="select" className="mt-2">
-                    <ReactSelectComponent
-                      isMulti
-                      options={selectOptions}
-                      value={selectValue}
-                      onChange={(selected) => {
-                        setSelectedIds(
-                          new Set(
-                            (selected as typeof selectOptions).map(
-                              (o) => o.value,
-                            ),
-                          ),
-                        );
-                      }}
-                      filterOption={(option, inputValue) =>
-                        option.data.searchHint.includes(
-                          inputValue.toLowerCase(),
-                        )
-                      }
-                      placeholder="Buscar y seleccionar clientes..."
-                      noOptionsMessage={() => "Sin resultados"}
-                      className="text-black"
-                      styles={{
-                        control: (base) => ({
-                          ...base,
-                          minHeight: "32px",
-                          fontSize: "12px",
-                          borderColor: "hsl(var(--border))",
-                        }),
-                        option: (base) => ({ ...base, fontSize: "12px" }),
-                        multiValue: (base) => ({ ...base, fontSize: "11px" }),
-                      }}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="table" className="mt-2">
-                    {tableInvalidCount > 0 && (
-                      <p className="text-[11px] text-muted-foreground mb-1">
-                        {tableInvalidCount} cliente(s) excluido(s) por teléfono
-                        inválido.
-                      </p>
+                    {selectedTemplate && (
+                      <div className="rounded-md border bg-muted/40 p-2 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono font-medium">
+                            {selectedTemplate.name}
+                          </span>
+                          <Badge
+                            variant={getStatusBadgeVariant(
+                              selectedTemplate.status,
+                            )}
+                            className="text-[10px] py-0 h-4"
+                          >
+                            {getStatusLabel(selectedTemplate.status)}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] py-0 h-4"
+                          >
+                            {getCategoryLabel(
+                              selectedTemplate.category as WhatsappTemplateCategory,
+                            )}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] py-0 h-4"
+                          >
+                            {selectedTemplate.language}
+                          </Badge>
+                        </div>
+                        {selectedTemplate.status !== "APPROVED" && (
+                          <p className="text-[11px] text-destructive flex items-center gap-1">
+                            <AlertTriangle className="size-3" />
+                            Solo se pueden enviar plantillas aprobadas.
+                          </p>
+                        )}
+                        <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                          {getBodyPreview(selectedTemplate)}
+                        </p>
+                      </div>
                     )}
-                    <div className="border rounded-md overflow-auto max-h-64">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/60 sticky top-0 z-10">
-                          <tr>
-                            <th className="w-8 p-2 text-left">
-                              <Checkbox
-                                checked={allVisibleSelected}
-                                onCheckedChange={(v) =>
-                                  handleToggleAllVisible(!!v)
-                                }
-                                aria-label="Seleccionar todos"
-                              />
-                            </th>
-                            <th className="p-2 text-left font-medium text-muted-foreground">
-                              Cliente
-                            </th>
-                            <th className="p-2 text-left font-medium text-muted-foreground">
-                              Teléfono
-                            </th>
-                            <th className="p-2 text-left font-medium text-muted-foreground hidden sm:table-cell">
-                              Dirección
-                            </th>
-                            <th className="p-2 text-center font-medium text-muted-foreground">
-                              Compras
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tableValidClients.length === 0 ? (
-                            <tr>
-                              <td
-                                colSpan={5}
-                                className="p-4 text-center text-muted-foreground"
-                              >
-                                Sin clientes para mostrar.
-                              </td>
-                            </tr>
-                          ) : (
-                            tableValidClients.map((c) => (
-                              <tr
-                                key={c.id}
-                                className="border-t hover:bg-muted/30 cursor-pointer"
-                                onClick={() => handleToggleId(c.id)}
-                              >
-                                <td className="p-2">
-                                  <Checkbox
-                                    checked={effectiveSelectedIds.has(c.id)}
-                                    onCheckedChange={() => handleToggleId(c.id)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    aria-label={`Seleccionar ${c.fullName}`}
-                                  />
-                                </td>
-                                <td className="p-2 font-medium">
-                                  {c.fullName || "—"}
-                                </td>
-                                <td className="p-2 font-mono">
-                                  {c.normalizedPhone}
-                                </td>
-                                <td className="p-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">
-                                  {c.direccion || "—"}
-                                </td>
-                                <td className="p-2 text-center">
-                                  {c._count.compras}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* ── Columna derecha ────────────────────────────────────────────────── */}
-        <div className="space-y-3">
-          <Card>
-            <CardContent className="p-3 space-y-1">
-              <p className="text-xs font-semibold mb-2">Clientes</p>
-              <StatRow
-                icon={<Users className="size-3 text-muted-foreground" />}
-                label="Total recibidos"
-                value={normalizedClients.length}
-              />
-              <StatRow
-                icon={<CheckCircle2 className="size-3 text-emerald-600" />}
-                label="Válidos"
-                value={validClients.length}
-              />
-              <StatRow
-                icon={<XCircle className="size-3 text-destructive" />}
-                label="Excluidos"
-                value={normalizedClients.length - validClients.length}
-              />
-              <Separator className="my-1" />
-              <StatRow
-                icon={<Send className="size-3 text-primary" />}
-                label="Seleccionados"
-                value={selectedClients.length}
-                bold
-              />
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between gap-2">
+                <CardTitle className="text-xs font-semibold">
+                  Destinatarios
+                </CardTitle>
+                {/* Modo ALL_VALID */}
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="all-valid"
+                    checked={sendMode === "ALL_VALID"}
+                    onCheckedChange={(v) =>
+                      setSendMode(v ? "ALL_VALID" : "SELECTED")
+                    }
+                  />
+                  <Label htmlFor="all-valid" className="text-xs cursor-pointer">
+                    Todos los válidos ({validClients.length})
+                  </Label>
+                </div>
+              </CardHeader>
+              <CardContent className="p-3 pt-0 space-y-2">
+                {sendMode === "ALL_VALID" && (
+                  <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 p-2">
+                    <AlertTriangle className="size-3 text-amber-600 shrink-0" />
+                    <p className="text-[11px] text-amber-800">
+                      Se enviará a todos los {validClients.length} clientes con
+                      teléfono válido. Puede generar costo alto.
+                    </p>
+                  </div>
+                )}
 
-          {/* Estimador de costos */}
-          <Card>
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-xs font-semibold flex items-center gap-1">
-                <DollarSign className="size-3" />
-                Estimación de gasto
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0 space-y-1">
-              <StatRow
-                label="Categoría"
-                value={
-                  selectedTemplate
-                    ? getCategoryLabel(
-                        selectedTemplate.category as WhatsappTemplateCategory,
-                      )
-                    : "—"
-                }
-              />
-              <StatRow
-                label="Costo unitario"
-                value={
-                  unitCost > 0 ? `$${unitCost.toFixed(4)}` : "No configurado"
-                }
-              />
-              <StatRow label="Destinatarios" value={selectedClients.length} />
-              <Separator className="my-1" />
-              <StatRow
-                label="Total estimado"
-                value={unitCost > 0 ? `$${totalEstimated.toFixed(4)}` : "—"}
-                bold
-              />
-
-              <div className="pt-2 space-y-1">
-                <Label className="text-[11px] text-muted-foreground">
-                  Simular cantidad
-                </Label>
-                <div className="flex gap-1 items-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <Input
-                    type="number"
-                    min="0"
-                    placeholder="Ej. 500"
-                    value={simulateQty}
-                    onChange={(e) => setSimulateQty(e.target.value)}
+                    placeholder="Buscar..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="h-7 text-xs col-span-2"
+                  />
+                  <Input
+                    placeholder="Localidad..."
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
                     className="h-7 text-xs"
                   />
-                  {simulatedTotal !== null && (
-                    <span className="text-xs font-mono whitespace-nowrap text-muted-foreground">
-                      = ${simulatedTotal.toFixed(4)}
-                    </span>
+                  <div className="flex gap-1">
+                    <Select
+                      value={purchaseFilter}
+                      onValueChange={(v) =>
+                        setPurchaseFilter(v as PurchaseFilter)
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">
+                          Todas las compras
+                        </SelectItem>
+                        <SelectItem value="with_purchases" className="text-xs">
+                          Con compras
+                        </SelectItem>
+                        <SelectItem
+                          value="without_purchases"
+                          className="text-xs"
+                        >
+                          Sin compras
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex gap-1 items-center">
+                    <Label className="text-xs text-muted-foreground">
+                      Teléfono:
+                    </Label>
+                    {(["valid", "invalid", "all"] as PhoneFilter[]).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setPhoneFilter(f)}
+                        className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                          phoneFilter === f
+                            ? "bg-foreground text-background border-foreground"
+                            : "border-border text-muted-foreground hover:border-foreground"
+                        }`}
+                      >
+                        {f === "valid"
+                          ? "Válidos"
+                          : f === "invalid"
+                            ? "Inválidos"
+                            : "Todos"}
+                      </button>
+                    ))}
+                  </div>
+                  {hasActiveFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs px-2 ml-auto"
+                      onClick={handleClearFilters}
+                    >
+                      <X className="size-3 mr-1" />
+                      Limpiar
+                    </Button>
                   )}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          {/* Resumen + Enviar */}
-          <Card className={isReadyToSend ? "border-primary/40" : ""}>
-            <CardHeader className="p-3 pb-2">
-              <CardTitle className="text-xs font-semibold flex items-center gap-1">
-                <Send className="size-3" />
-                Resumen
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0 space-y-1">
-              <StatRow
-                label="Plantilla"
-                value={selectedTemplate?.name ?? "—"}
-                mono
-              />
-              <StatRow
-                label="Categoría"
-                value={
-                  selectedTemplate
-                    ? getCategoryLabel(
-                        selectedTemplate.category as WhatsappTemplateCategory,
-                      )
-                    : "—"
-                }
-              />
-              <StatRow label="Seleccionados" value={selectedClients.length} />
-              <StatRow
-                label="Costo estimado"
-                value={unitCost > 0 ? `$${totalEstimated.toFixed(4)}` : "—"}
-              />
-              <Separator className="my-1" />
-              <div className="flex items-center gap-1 py-1">
-                {isReadyToSend ? (
-                  <CheckCircle2 className="size-3 text-emerald-600" />
-                ) : (
-                  <XCircle className="size-3 text-destructive" />
+                {sendMode === "SELECTED" && (
+                  <Tabs
+                    value={selectionTab}
+                    onValueChange={(v) =>
+                      setSelectionTab(v as "select" | "table")
+                    }
+                  >
+                    <TabsList className="h-7 text-xs">
+                      <TabsTrigger value="select" className="text-xs h-6 gap-1">
+                        <LayoutList className="size-3" />
+                        Buscador
+                      </TabsTrigger>
+                      <TabsTrigger value="table" className="text-xs h-6 gap-1">
+                        <Table2 className="size-3" />
+                        Tabla
+                      </TabsTrigger>
+                    </TabsList>
+
+                    {/* React Select multi */}
+                    <TabsContent value="select" className="mt-2">
+                      <ReactSelectComponent
+                        isMulti
+                        options={selectOptions}
+                        value={selectValue}
+                        onChange={(selected) => {
+                          setSelectedIds(
+                            new Set(
+                              (selected as typeof selectOptions).map(
+                                (o) => o.value,
+                              ),
+                            ),
+                          );
+                        }}
+                        filterOption={(option, inputValue) =>
+                          option.data.searchHint.includes(
+                            inputValue.toLowerCase(),
+                          )
+                        }
+                        placeholder="Buscar y seleccionar clientes..."
+                        noOptionsMessage={() => "Sin resultados"}
+                        className="text-black"
+                        styles={{
+                          control: (base) => ({
+                            ...base,
+                            minHeight: "32px",
+                            fontSize: "12px",
+                            borderColor: "hsl(var(--border))",
+                          }),
+                          option: (base) => ({ ...base, fontSize: "12px" }),
+                          multiValue: (base) => ({ ...base, fontSize: "11px" }),
+                        }}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="table" className="mt-2">
+                      {tableInvalidCount > 0 && (
+                        <p className="text-[11px] text-muted-foreground mb-1">
+                          {tableInvalidCount} cliente(s) excluido(s) por
+                          teléfono inválido.
+                        </p>
+                      )}
+                      <div className="border rounded-md overflow-auto max-h-64">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/60 sticky top-0 z-10">
+                            <tr>
+                              <th className="w-8 p-2 text-left">
+                                <Checkbox
+                                  checked={allVisibleSelected}
+                                  onCheckedChange={(v) =>
+                                    handleToggleAllVisible(!!v)
+                                  }
+                                  aria-label="Seleccionar todos"
+                                />
+                              </th>
+                              <th className="p-2 text-left font-medium text-muted-foreground">
+                                Cliente
+                              </th>
+                              <th className="p-2 text-left font-medium text-muted-foreground">
+                                Teléfono
+                              </th>
+                              <th className="p-2 text-left font-medium text-muted-foreground hidden sm:table-cell">
+                                Dirección
+                              </th>
+                              <th className="p-2 text-center font-medium text-muted-foreground">
+                                Compras
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tableValidClients.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={5}
+                                  className="p-4 text-center text-muted-foreground"
+                                >
+                                  Sin clientes para mostrar.
+                                </td>
+                              </tr>
+                            ) : (
+                              tableValidClients.map((c) => (
+                                <tr
+                                  key={c.id}
+                                  className="border-t hover:bg-muted/30 cursor-pointer"
+                                  onClick={() => handleToggleId(c.id)}
+                                >
+                                  <td className="p-2">
+                                    <Checkbox
+                                      checked={effectiveSelectedIds.has(c.id)}
+                                      onCheckedChange={() =>
+                                        handleToggleId(c.id)
+                                      }
+                                      onClick={(e) => e.stopPropagation()}
+                                      aria-label={`Seleccionar ${c.fullName}`}
+                                    />
+                                  </td>
+                                  <td className="p-2 font-medium">
+                                    {c.fullName || "—"}
+                                  </td>
+                                  <td className="p-2 font-mono">
+                                    {c.normalizedPhone}
+                                  </td>
+                                  <td className="p-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">
+                                    {c.direccion || "—"}
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    {c._count.compras}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
                 )}
-                <span
-                  className={`text-xs font-medium ${isReadyToSend ? "text-emerald-700" : "text-destructive"}`}
-                >
-                  {isReadyToSend
-                    ? "Listo para enviar"
-                    : "Completa los campos requeridos"}
-                </span>
-              </div>
-              <Button
-                size="sm"
-                className="w-full h-8 text-xs mt-1"
-                disabled={!isReadyToSend}
-                onClick={() => setConfirmOpen(true)}
-              >
-                <Send className="size-3 mr-1" />
-                Enviar campaña
-              </Button>
-
-              {/* Payload colapsable */}
-              <button
-                className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1 hover:text-foreground transition-colors"
-                onClick={() => setPayloadOpen((v) => !v)}
-              >
-                {payloadOpen ? (
-                  <ChevronUp className="size-3" />
-                ) : (
-                  <ChevronDown className="size-3" />
-                )}
-                {payloadOpen ? "Ocultar" : "Ver"} payload
-              </button>
-              {payloadOpen && (
-                <pre className="text-[10px] bg-muted rounded p-2 overflow-auto max-h-40 leading-relaxed">
-                  {payload ? JSON.stringify(payload, null, 2) : "Sin datos"}
-                </pre>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-sm">
-              Confirmar envío de campaña
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-2 py-1">
-            <div className="rounded-md bg-destructive/10 border border-destructive/30 p-2 flex gap-2">
-              <AlertTriangle className="size-3 text-destructive shrink-0 mt-0.5" />
-              <p className="text-xs text-destructive">
-                Esta acción enviará una campaña real a los clientes
-                seleccionados.
-              </p>
-            </div>
-
-            <div className="space-y-1 text-xs">
-              <ConfirmRow
-                label="Plantilla"
-                value={selectedTemplate?.name ?? "—"}
-                mono
-              />
-              <ConfirmRow
-                label="Categoría"
-                value={
-                  selectedTemplate
-                    ? getCategoryLabel(
-                        selectedTemplate.category as WhatsappTemplateCategory,
-                      )
-                    : "—"
-                }
-              />
-              <ConfirmRow
-                label="Estado"
-                value={
-                  selectedTemplate
-                    ? getStatusLabel(selectedTemplate.status)
-                    : "—"
-                }
-              />
-              <ConfirmRow label="Clientes" value={selectedClients.length} />
-              <ConfirmRow
-                label="Total estimado"
-                value={
-                  unitCost > 0
-                    ? `$${totalEstimated.toFixed(4)} USD`
-                    : "No configurado"
-                }
-                bold
-              />
-            </div>
+              </CardContent>
+            </Card>
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs"
-              onClick={() => setConfirmOpen(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              size="sm"
-              className="text-xs"
-              disabled={!isReadyToSend}
-              onClick={handleConfirmSend}
-            >
-              <Send className="size-3 mr-1" />
-              Confirmar envío
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          {/* ── Columna derecha ────────────────────────────────────────────────── */}
+          <div className="space-y-3">
+            <Card>
+              <CardContent className="p-3 space-y-1">
+                <p className="text-xs font-semibold mb-2">Clientes</p>
+                <StatRow
+                  icon={<Users className="size-3 text-muted-foreground" />}
+                  label="Total recibidos"
+                  value={normalizedClients.length}
+                />
+                <StatRow
+                  icon={<CheckCircle2 className="size-3 text-emerald-600" />}
+                  label="Válidos"
+                  value={validClients.length}
+                />
+                <StatRow
+                  icon={<XCircle className="size-3 text-destructive" />}
+                  label="Excluidos"
+                  value={normalizedClients.length - validClients.length}
+                />
+                <Separator className="my-1" />
+                <StatRow
+                  icon={<Send className="size-3 text-primary" />}
+                  label="Seleccionados"
+                  value={selectedClients.length}
+                  bold
+                />
+              </CardContent>
+            </Card>
+
+            {/* Estimador de costos */}
+            <Card>
+              <CardHeader className="p-3 pb-2">
+                <CardTitle className="text-xs font-semibold flex items-center gap-1">
+                  <DollarSign className="size-3" />
+                  Estimación de gasto
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 pt-0 space-y-1">
+                <StatRow
+                  label="Categoría"
+                  value={
+                    selectedTemplate
+                      ? getCategoryLabel(
+                          selectedTemplate.category as WhatsappTemplateCategory,
+                        )
+                      : "—"
+                  }
+                />
+                <StatRow
+                  label="Costo unitario"
+                  value={
+                    unitCost > 0 ? `$${unitCost.toFixed(4)}` : "No configurado"
+                  }
+                />
+                <StatRow label="Destinatarios" value={selectedClients.length} />
+                <Separator className="my-1" />
+                <StatRow
+                  label="Total estimado"
+                  value={unitCost > 0 ? `$${totalEstimated.toFixed(4)}` : "—"}
+                  bold
+                />
+
+                <div className="pt-2 space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">
+                    Simular cantidad
+                  </Label>
+                  <div className="flex gap-1 items-center">
+                    <Input
+                      type="number"
+                      min="0"
+                      placeholder="Ej. 500"
+                      value={simulateQty}
+                      onChange={(e) => setSimulateQty(e.target.value)}
+                      className="h-7 text-xs"
+                    />
+                    {simulatedTotal !== null && (
+                      <span className="text-xs font-mono whitespace-nowrap text-muted-foreground">
+                        = ${simulatedTotal.toFixed(4)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Resumen + Enviar */}
+
+            {selectedTemplateNeedsImage && (
+              <div className="rounded-md border bg-muted/30 p-2 space-y-1">
+                <Label className="text-xs">
+                  Imagen de encabezado requerida
+                </Label>
+
+                <Input
+                  value={headerImageUrl}
+                  onChange={(e) => setHeaderImageUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="h-8 text-xs"
+                />
+
+                <p className="text-[11px] text-muted-foreground">
+                  Esta plantilla tiene HEADER IMAGE. Debes usar una URL pública
+                  accesible por Meta.
+                </p>
+              </div>
+            )}
+
+            <SelectedWhatsappTemplatePreview
+              template={selectedTemplate}
+              headerImageUrl={headerImageUrl}
+            />
+
+            <Card className={isReadyToSend ? "border-primary/40" : ""}>
+              <CardHeader className="p-3 pb-2">
+                <CardTitle className="text-xs font-semibold flex items-center gap-1">
+                  <Send className="size-3" />
+                  Resumen
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 pt-0 space-y-1">
+                <StatRow
+                  label="Plantilla"
+                  value={selectedTemplate?.name ?? "—"}
+                  mono
+                />
+                <StatRow
+                  label="Categoría"
+                  value={
+                    selectedTemplate
+                      ? getCategoryLabel(
+                          selectedTemplate.category as WhatsappTemplateCategory,
+                        )
+                      : "—"
+                  }
+                />
+                <StatRow label="Seleccionados" value={selectedClients.length} />
+                <StatRow
+                  label="Costo estimado"
+                  value={unitCost > 0 ? `$${totalEstimated.toFixed(4)}` : "—"}
+                />
+                <Separator className="my-1" />
+                <div className="flex items-center gap-1 py-1">
+                  {isReadyToSend ? (
+                    <CheckCircle2 className="size-3 text-emerald-600" />
+                  ) : (
+                    <XCircle className="size-3 text-destructive" />
+                  )}
+                  <span
+                    className={`text-xs font-medium ${isReadyToSend ? "text-emerald-700" : "text-destructive"}`}
+                  >
+                    {isReadyToSend
+                      ? "Listo para enviar"
+                      : "Completa los campos requeridos"}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full h-8 text-xs mt-1"
+                  disabled={!isReadyToSend}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  <Send className="size-3 mr-1" />
+                  Enviar campaña
+                </Button>
+
+                {/* Payload colapsable */}
+                <button
+                  className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1 hover:text-foreground transition-colors"
+                  onClick={() => setPayloadOpen((v) => !v)}
+                >
+                  {payloadOpen ? (
+                    <ChevronUp className="size-3" />
+                  ) : (
+                    <ChevronDown className="size-3" />
+                  )}
+                  {payloadOpen ? "Ocultar" : "Ver"} payload
+                </button>
+                {payloadOpen && (
+                  <pre className="text-[10px] bg-muted rounded p-2 overflow-auto max-h-40 leading-relaxed">
+                    {payload ? JSON.stringify(payload, null, 2) : "Sin datos"}
+                  </pre>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm">
+                Confirmar envío de campaña
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-2 py-1">
+              <div className="rounded-md bg-destructive/10 border border-destructive/30 p-2 flex gap-2">
+                <AlertTriangle className="size-3 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">
+                  Esta acción enviará una campaña real a los clientes
+                  seleccionados.
+                </p>
+              </div>
+
+              <div className="space-y-1 text-xs">
+                <ConfirmRow
+                  label="Plantilla"
+                  value={selectedTemplate?.name ?? "—"}
+                  mono
+                />
+                <ConfirmRow
+                  label="Categoría"
+                  value={
+                    selectedTemplate
+                      ? getCategoryLabel(
+                          selectedTemplate.category as WhatsappTemplateCategory,
+                        )
+                      : "—"
+                  }
+                />
+                <ConfirmRow
+                  label="Estado"
+                  value={
+                    selectedTemplate
+                      ? getStatusLabel(selectedTemplate.status)
+                      : "—"
+                  }
+                />
+                <ConfirmRow label="Clientes" value={selectedClients.length} />
+                <ConfirmRow
+                  label="Total estimado"
+                  value={
+                    unitCost > 0
+                      ? `$${totalEstimated.toFixed(4)} USD`
+                      : "No configurado"
+                  }
+                  bold
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                className="text-xs"
+                disabled={!isReadyToSend || sendCampaignMutation.isPending}
+                onClick={handleConfirmSend}
+              >
+                <Send className="size-3 mr-1" />
+                {sendCampaignMutation.isPending
+                  ? "Enviando..."
+                  : "Confirmar envío"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </PageTransition>
   );
 }
 

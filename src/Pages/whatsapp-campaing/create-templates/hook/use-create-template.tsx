@@ -18,6 +18,7 @@ import {
   createUtilityImageTemplate,
   createWhatsappTemplate,
 } from "../services/services";
+import { toast } from "sonner";
 
 // ─── Variable detection ───────────────────────────────────────────────────────
 
@@ -182,6 +183,10 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // ── Field setters ────────────────────────────────────────────────────────────
+
+  // const setResetForm = () => {
+  //   setForm(DEFAULT_FORM);
+  // };
 
   const setName = useCallback((value: string) => {
     setForm((f) => ({ ...f, name: value }));
@@ -365,8 +370,8 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
   const confirmSubmit = useCallback(async () => {
     setSubmitting(true);
     setSubmitError(null);
+
     try {
-      // Use utility/image shortcut when applicable
       const isUtilityImage =
         form.category === "UTILITY" &&
         form.headerEnabled &&
@@ -391,15 +396,22 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
 
       setSubmitResult(result);
       setConfirmOpen(false);
+
+      toast.success("Plantilla enviada a Meta correctamente");
+
+      resetForm();
+
       onSuccess?.();
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Error inesperado al enviar.",
-      );
+      const message =
+        err instanceof Error ? err.message : "Error inesperado al enviar.";
+
+      setSubmitError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
-  }, [form, onSuccess]);
+  }, [form, onSuccess, resetForm]);
 
   // ── Derived payload for preview ───────────────────────────────────────────────
 
@@ -456,5 +468,6 @@ export function useCreateWhatsappTemplateForm(onSuccess?: () => void) {
     requestSubmit,
     confirmSubmit,
     setConfirmOpen,
+    //
   };
 }

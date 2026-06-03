@@ -23,7 +23,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
-  Eye,
+  // Eye,
   MoreHorizontal,
   PauseCircle,
   RefreshCw,
@@ -37,6 +37,8 @@ import {
   normalizeCategory,
 } from "@/Types/whatsapp-campaing/types";
 import type { MetaWhatsappTemplate } from "@/Types/whatsapp-campaing/types";
+import { AdvancedDialogERP } from "@/utils/components/dialog/advanced-dialog";
+import { useState } from "react";
 
 const STATUS_ICON_MAP: Record<string, React.ElementType> = {
   APPROVED: CheckCircle2,
@@ -48,8 +50,6 @@ const STATUS_ICON_MAP: Record<string, React.ElementType> = {
   PENDING_DELETION: Trash2,
   UNKNOWN: AlertCircle,
 };
-
-// ─── Atoms ────────────────────────────────────────────────────────────────────
 
 function TemplateStatusBadge({ status }: { status: string }) {
   const { label, variant, iconKey } = getStatusBadgeMeta(status);
@@ -117,25 +117,38 @@ function TemplatePreviewCell({ template }: { template: MetaWhatsappTemplate }) {
   );
 }
 
-// ─── Row actions ──────────────────────────────────────────────────────────────
-
 interface TemplateActionsProps {
+  isDeleting: boolean;
   template: MetaWhatsappTemplate;
   onCopyName: (name: string) => void;
   onCopyId: (id: string) => void;
   onViewDetails: (template: MetaWhatsappTemplate) => void;
   onRefreshStatus: (template: MetaWhatsappTemplate) => void;
   onDelete: (template: MetaWhatsappTemplate) => void;
+  toggleConfirmDelete: () => void;
+  openConfirmDelete: boolean;
+  setTemplateSelected: React.Dispatch<
+    React.SetStateAction<MetaWhatsappTemplate | null>
+  >;
+  templateSelected: MetaWhatsappTemplate | null;
 }
 
 function TemplateActions({
   template,
   onCopyName,
-  onCopyId,
-  onViewDetails,
   onRefreshStatus,
-  onDelete,
+  // onDelete,
+  isDeleting,
+  // openConfirmDelete,
+  toggleConfirmDelete,
+  setTemplateSelected,
+  // templateSelected,
 }: TemplateActionsProps) {
+  const setStates = (template: MetaWhatsappTemplate) => {
+    toggleConfirmDelete();
+    setTemplateSelected(template);
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -151,25 +164,12 @@ function TemplateActions({
       <DropdownMenuContent align="end" className="text-sm">
         <DropdownMenuItem
           className="gap-2 text-xs"
-          onSelect={() => onViewDetails(template)}
-        >
-          <Eye className="size-3.5" />
-          Ver detalles
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 text-xs"
           onSelect={() => onCopyName(template.name)}
         >
           <Copy className="size-3.5" />
           Copiar nombre
         </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 text-xs"
-          onSelect={() => onCopyId(template.id)}
-        >
-          <Copy className="size-3.5" />
-          Copiar ID
-        </DropdownMenuItem>
+
         <DropdownMenuItem
           className="gap-2 text-xs"
           onSelect={() => onRefreshStatus(template)}
@@ -180,7 +180,8 @@ function TemplateActions({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 text-xs text-destructive focus:text-destructive"
-          onSelect={() => onDelete(template)}
+          onSelect={() => setStates(template)}
+          disabled={isDeleting}
         >
           <Trash2 className="size-3.5" />
           Eliminar de Meta
@@ -190,10 +191,11 @@ function TemplateActions({
   );
 }
 
-// ─── Table ────────────────────────────────────────────────────────────────────
-
 interface TemplatesTableProps {
   templates: MetaWhatsappTemplate[];
+  isDeleting: boolean;
+  toggleConfirmDelete: () => void;
+  openConfirmDelete: boolean;
   onCopyName: (name: string) => void;
   onCopyId: (id: string) => void;
   onViewDetails: (template: MetaWhatsappTemplate) => void;
@@ -208,7 +210,19 @@ export function TemplatesTable({
   onViewDetails,
   onRefreshStatus,
   onDelete,
+  isDeleting,
+  openConfirmDelete,
+  toggleConfirmDelete,
 }: TemplatesTableProps) {
+  const [templateSelected, setTemplateSelected] =
+    useState<MetaWhatsappTemplate | null>(null);
+
+  const handleConfirmDelete = () => {
+    if (!templateSelected) return;
+
+    onDelete(templateSelected);
+  };
+
   return (
     <div className="rounded-lg border overflow-hidden">
       <Table>
@@ -270,12 +284,35 @@ export function TemplatesTable({
                   onViewDetails={onViewDetails}
                   onRefreshStatus={onRefreshStatus}
                   onDelete={onDelete}
+                  isDeleting={isDeleting}
+                  toggleConfirmDelete={toggleConfirmDelete}
+                  openConfirmDelete={openConfirmDelete}
+                  setTemplateSelected={setTemplateSelected}
+                  templateSelected={templateSelected}
                 />
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      <AdvancedDialogERP
+        onOpenChange={toggleConfirmDelete}
+        open={openConfirmDelete}
+        title="¿Estás seguro de eliminar esta plantilla de Whatsapp?"
+        description="Esto eliminará completamente la plantilla de tu WABA de Whatsapp Meta, y no podrás recuperar el registro ni volver a usarla."
+        confirmButton={{
+          onClick: handleConfirmDelete,
+          label: "Sí, eliminar plantilla",
+          disabled: isDeleting,
+          loading: isDeleting,
+          loadingText: "Eliminando...",
+        }}
+        cancelButton={{
+          onClick: toggleConfirmDelete,
+          label: "Cancelar",
+          disabled: isDeleting,
+        }}
+      />
     </div>
   );
 }

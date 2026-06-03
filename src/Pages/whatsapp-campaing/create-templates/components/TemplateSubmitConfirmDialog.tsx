@@ -65,7 +65,6 @@ export function TemplateSubmitConfirmDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Summary */}
         <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs">
           <SummaryRow label="Nombre">
             <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
@@ -87,7 +86,6 @@ export function TemplateSubmitConfirmDialog({
             {variableCount === 0 ? "Ninguna" : variableCount}
           </SummaryRow>
 
-          {/* Image row (only when header image is active) */}
           {hasHeaderImage && (
             <SummaryRow label="Imagen header">
               {imageUploaded ? (
@@ -110,7 +108,6 @@ export function TemplateSubmitConfirmDialog({
           )}
         </div>
 
-        {/* Warning when image is pending */}
         {imagePending && (
           <Alert variant="destructive" className="py-2 px-3">
             <AlertCircle className="size-3.5" />

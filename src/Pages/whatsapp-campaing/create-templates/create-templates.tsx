@@ -1,5 +1,6 @@
 "use client";
 
+import { PageTransition } from "@/components/Transition/layout-transition";
 import { TemplateBasicInfoCard } from "./components/TemplateBasicInfoCard";
 import { TemplateBodyEditorCard } from "./components/TemplateBodyEditorCard";
 import { TemplateButtonsEditorCard } from "./components/TemplateButtonsEditorCard";
@@ -56,7 +57,10 @@ export function WhatsappTemplateCreatePage({
   } = useCreateWhatsappTemplateForm(onSuccess);
 
   return (
-    <div className="space-y-3 p-4 max-w-screen-xl mx-auto">
+    <PageTransition
+      fallbackBackTo="/"
+      titleHeader="Crear plantilla de Whatsapp"
+    >
       {/* Actions bar */}
       <TemplateCreateActionsBar
         onBack={onBack}
@@ -128,7 +132,6 @@ export function WhatsappTemplateCreatePage({
           />
         </div>
 
-        {/* Right column — WhatsApp preview + payload */}
         <div className="space-y-3">
           <TemplateWhatsappPreviewCard form={form} />
 
@@ -150,6 +153,6 @@ export function WhatsappTemplateCreatePage({
         onCancel={() => setConfirmOpen(false)}
         onConfirm={confirmSubmit}
       />
-    </div>
+    </PageTransition>
   );
 }

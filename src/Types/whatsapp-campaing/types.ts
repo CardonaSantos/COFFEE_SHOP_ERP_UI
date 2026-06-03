@@ -315,22 +315,6 @@ export interface TemplateVariable {
   value: string;
 }
 
-// export interface WhatsappTemplateCreateFormState {
-//   name: string;
-//   language: string;
-//   category: WhatsappTemplateCategory;
-//   headerEnabled: boolean;
-//   headerFormat: WhatsappTemplateHeaderFormat;
-//   headerText: string;
-//   headerHandle: string;
-//   bodyText: string;
-//   bodyVariables: TemplateVariable[];
-//   footerEnabled: boolean;
-//   footerText: string;
-//   buttonsEnabled: boolean;
-//   buttons: WhatsappTemplateButton[];
-// }
-
 export interface WhatsappTemplateCreateFormState {
   name: string;
   language: string;
@@ -409,7 +393,6 @@ export interface CampaignEstimatedCost {
   totalRecipients: number;
   totalEstimated: number;
 }
-
 export interface CampaignPayload {
   templateId: string;
   templateName: string;
