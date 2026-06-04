@@ -98,6 +98,9 @@ import { PresupuestoDetallePage } from "./Pages/costo_presupuestal/components/pr
 import { CreatePresupuestoForm } from "./Pages/costo_presupuestal/components/presupuestos/form/presupuesto-form";
 import ContabilidadPage from "./Pages/contabilidad/contabilidad-page";
 import DashboardAnalitycs from "./Pages/dashboard-analitycs/page";
+import WhatsappTemplatesPage from "./Pages/whatsapp-campaing/page";
+import { WhatsappTemplateCreatePage } from "./Pages/whatsapp-campaing/create-templates/create-templates";
+import { WhatsappMessaginCapaing } from "./Pages/whatsapp-campaing/send-messages/page";
 
 function App() {
   const { checkAuth } = useAuthStore();
@@ -831,6 +834,34 @@ function App() {
                 </ProtectRouteAdmin>
               }
             />
+
+            <Route
+              path="/whatsapp-campaign-templates"
+              element={
+                <ProtectRouteAdmin>
+                  <WhatsappTemplatesPage />
+                </ProtectRouteAdmin>
+              }
+            />
+
+            <Route
+              path="/whatsapp-campaing-create-templates"
+              element={
+                <ProtectRouteAdmin>
+                  <WhatsappTemplateCreatePage />
+                </ProtectRouteAdmin>
+              }
+            />
+
+            <Route
+              path="/whatsApp-campaign-messaging"
+              element={
+                <ProtectRouteAdmin>
+                  <WhatsappMessaginCapaing />
+                </ProtectRouteAdmin>
+              }
+            />
+
             {/* RUTAS PARA EL CRM */}
           </Route>
         </Routes>

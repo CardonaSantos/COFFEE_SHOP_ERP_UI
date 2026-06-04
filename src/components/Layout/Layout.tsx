@@ -266,10 +266,6 @@ export default function Layout2({ children }: LayoutProps) {
           <main className="flex-1 overflow-y-auto px-2 md:px-3 lg:px-0 py-2 lg:py-1">
             {children || <Outlet />}
           </main>
-
-          <footer className="bg-background py-4 text-center text-sm text-muted-foreground border-t">
-            <p>&copy; 2025 Nova Sistemas. Todos los derechos reservados</p>
-          </footer>
         </div>
       </SidebarProvider>
       <AdvancedDialog

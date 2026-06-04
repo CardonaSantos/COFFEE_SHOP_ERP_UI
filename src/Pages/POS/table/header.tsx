@@ -288,7 +288,7 @@ function FilterBar({
                   onScanEnter();
                 }
               }}
-              className="h-8 pl-7 pr-2 text-xs border-primary ring-1 ring-primary/40 focus-visible:ring-primary"
+              className="h-8 pl-7 pr-2 text-xs border-primary  ring-1 ring-offset-white/40 focus-visible:ring-primary"
             />
           </div>
         )}
@@ -297,20 +297,20 @@ function FilterBar({
         <div className="flex items-center gap-1.5 shrink-0">
           <Zap
             className={`h-3.5 w-3.5 transition-colors ${
-              isScannerMode ? "text-primary" : "text-muted-foreground"
+              isScannerMode ? "" : "text-muted-foreground"
             }`}
           />
           <Switch
             id="scanner-mode-switch"
             checked={isScannerMode}
             onCheckedChange={onToggleScannerMode}
-            className="data-[state=checked]:bg-primary"
+            className="data-[state=checked]:bg-primary dark:bg-white"
           />
           <Label
             htmlFor="scanner-mode-switch"
             className={`text-xs cursor-pointer select-none transition-colors ${
               isScannerMode
-                ? "text-primary font-medium"
+                ? "text-primary font-medium text-white"
                 : "text-muted-foreground"
             }`}
           >

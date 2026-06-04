@@ -64,6 +64,9 @@ import {
   CollapsibleTrigger,
 } from "../ui/collapsible";
 import { useMemo } from "react";
+import { WhatsappIcon } from "../icons/WhatsappIcon";
+import { MetaIcon } from "../icons/MetaIcon";
+import { MessageIcon } from "../icons/MessageIcon";
 
 export const menuVendedor = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
@@ -273,6 +276,23 @@ const menuItemsAdmin = [
     submenu: [
       { icon: Target, label: "Metas Generales", href: "/metas" },
       { icon: Goal, label: "Mis Metas", href: "/mis-metas" },
+    ],
+  },
+
+  {
+    icon: WhatsappIcon,
+    label: "Campañas WhatsApp",
+    submenu: [
+      {
+        icon: MetaIcon,
+        label: "Plantillas Meta",
+        href: "/whatsapp-campaign-templates",
+      },
+      {
+        icon: MessageIcon,
+        label: "Enviar campaña",
+        href: "/whatsapp-campaign-messaging",
+      },
     ],
   },
 
