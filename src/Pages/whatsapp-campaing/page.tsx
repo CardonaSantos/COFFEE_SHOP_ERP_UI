@@ -29,6 +29,7 @@ import { TemplatesPagination } from "./components/TemplatesPagination";
 import { useWhatsappTemplates } from "@/hooks/use-whatsapp-template/use-whatsapp-template";
 import { PageTransition } from "@/components/Transition/layout-transition";
 import { useDeleteWhatsappTemplate } from "@/hooks/use-whatsapp-template/use-delete-whatsapp-template";
+import { getApiErrorMessageAxios } from "../Utils/UtilsErrorApi";
 
 export default function WhatsappTemplatesPage() {
   const [filters, setFilters] =
@@ -108,24 +109,12 @@ export default function WhatsappTemplatesPage() {
   };
 
   const handleDelete = (template: MetaWhatsappTemplate) => {
-    const confirmed = window.confirm(
-      `¿Eliminar la plantilla "${template.name}"?\n\nEsta acción también intentará eliminarla en Meta.`,
-    );
-
-    if (!confirmed) return;
-
-    deleteTemplateMutation.mutate(template.id, {
-      onSuccess: () => {
-        toast.success("Plantilla eliminada correctamente");
-      },
-      onError: (error) => {
-        console.error(error);
-        toast.error("No se pudo eliminar la plantilla");
-      },
+    toast.promise(deleteTemplateMutation.mutateAsync(template.name), {
+      loading: "Enviando solicitud de eliminación",
+      success: "Plantilla eliminada correctamente",
+      error: (error) => getApiErrorMessageAxios(error),
     });
   };
-
-  console.log("Las templates son: ", allTemplates);
 
   return (
     <PageTransition fallbackBackTo="/" titleHeader="Plantillas de Whatsapp">

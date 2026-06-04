@@ -2,7 +2,6 @@
 import { useState, useMemo, useCallback } from "react";
 import ReactSelectComponent from "react-select";
 import {
-  Users,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -268,6 +267,11 @@ export function WhatsappMessaginCapaing() {
 
   const selectedTemplateNeedsImage = selectedTemplateHeader?.format === "IMAGE";
 
+  const hasHeaderImageUrl = Boolean(headerImageUrl?.trim());
+
+  const isMissingRequiredImageUrl =
+    selectedTemplateNeedsImage && !hasHeaderImageUrl;
+
   const payload = useMemo<CampaignPayload | null>(() => {
     if (!selectedTemplate) return null;
 
@@ -417,13 +421,6 @@ export function WhatsappMessaginCapaing() {
   const allVisibleSelected =
     tableValidClients.length > 0 &&
     tableValidClients.every((c) => effectiveSelectedIds.has(c.id));
-
-  // console.log(
-  //   "La template seleccionada es: ",
-  //   selectedTemplate?.components[0].example?.header_handle[0],
-  // );
-  console.log("Las templates son: ", templates);
-  console.log("La selectedTemplate: ", selectedTemplate);
 
   return (
     <PageTransition fallbackBackTo="/" titleHeader="Envio de campañas">
@@ -773,10 +770,13 @@ export function WhatsappMessaginCapaing() {
               <CardContent className="p-3 space-y-1">
                 <p className="text-xs font-semibold mb-2">Clientes</p>
                 <StatRow
-                  icon={<Users className="size-3 text-muted-foreground" />}
-                  label="Total recibidos"
-                  value={normalizedClients.length}
+                  icon={<Send className="size-3 text-primary" />}
+                  label="Seleccionados"
+                  value={selectedClients.length}
+                  bold
                 />
+                <Separator className="my-1" />
+
                 <StatRow
                   icon={<CheckCircle2 className="size-3 text-emerald-600" />}
                   label="Válidos"
@@ -786,13 +786,6 @@ export function WhatsappMessaginCapaing() {
                   icon={<XCircle className="size-3 text-destructive" />}
                   label="Excluidos"
                   value={normalizedClients.length - validClients.length}
-                />
-                <Separator className="my-1" />
-                <StatRow
-                  icon={<Send className="size-3 text-primary" />}
-                  label="Seleccionados"
-                  value={selectedClients.length}
-                  bold
                 />
               </CardContent>
             </Card>
@@ -958,7 +951,7 @@ export function WhatsappMessaginCapaing() {
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle className="text-sm">
+              <DialogTitle className="text-sm text-center">
                 Confirmar envío de campaña
               </DialogTitle>
             </DialogHeader>
@@ -967,7 +960,7 @@ export function WhatsappMessaginCapaing() {
               <div className="rounded-md bg-destructive/10 border border-destructive/30 p-2 flex gap-2">
                 <AlertTriangle className="size-3 text-destructive shrink-0 mt-0.5" />
                 <p className="text-xs text-destructive">
-                  Esta acción enviará una campaña real a los clientes
+                  Esta acción enviará la campaña por Whatsapp a los clientes
                   seleccionados.
                 </p>
               </div>
@@ -1021,7 +1014,11 @@ export function WhatsappMessaginCapaing() {
               <Button
                 size="sm"
                 className="text-xs"
-                disabled={!isReadyToSend || sendCampaignMutation.isPending}
+                disabled={
+                  !isReadyToSend ||
+                  sendCampaignMutation.isPending ||
+                  isMissingRequiredImageUrl
+                }
                 onClick={handleConfirmSend}
               >
                 <Send className="size-3 mr-1" />

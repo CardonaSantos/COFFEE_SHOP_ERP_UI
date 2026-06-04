@@ -13,9 +13,9 @@ export function useDeleteWhatsappTemplate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (templateId: string) => {
+    mutationFn: async (templateName: string) => {
       const { data } = await axiosClient.delete<DeleteWhatsappTemplateResponse>(
-        `whatsapp-template/${templateId}`,
+        `whatsapp-template/meta/name/${templateName}`,
       );
 
       return data;
