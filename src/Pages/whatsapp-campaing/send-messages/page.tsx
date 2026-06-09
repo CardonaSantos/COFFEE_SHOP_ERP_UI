@@ -1,6 +1,8 @@
 "use client";
-import { useState, useMemo, useCallback } from "react";
+
+import { useState, useMemo, useCallback, useRef } from "react";
 import ReactSelectComponent from "react-select";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   CheckCircle2,
   XCircle,
@@ -23,6 +25,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,6 +81,7 @@ function getTemplateCostByCategory(category: WhatsappTemplateCategory): number {
     AUTHENTICATION:
       parseFloat(import.meta.env.VITE_WHATSAPP_COST_AUTHENTICATION ?? "") || 0,
   };
+
   return isNaN(costs[category]) ? 0 : costs[category];
 }
 
@@ -95,6 +99,7 @@ function getStatusBadgeVariant(
   if (status === "APPROVED") return "default";
   if (status === "PENDING") return "secondary";
   if (status === "REJECTED") return "destructive";
+
   return "outline";
 }
 
@@ -108,13 +113,67 @@ function getStatusLabel(status: string): string {
     IN_APPEAL: "En apelación",
     PENDING_DELETION: "Por eliminar",
   };
+
   return map[status] ?? status;
 }
 
+const reactSelectStyles = {
+  control: (base: any) => ({
+    ...base,
+    minHeight: "32px",
+    fontSize: "12px",
+    borderColor: "hsl(var(--border))",
+    boxShadow: "none",
+  }),
+  valueContainer: (base: any) => ({
+    ...base,
+    paddingTop: 0,
+    paddingBottom: 0,
+  }),
+  indicatorsContainer: (base: any) => ({
+    ...base,
+    minHeight: "32px",
+  }),
+  option: (base: any) => ({
+    ...base,
+    fontSize: "12px",
+  }),
+  placeholder: (base: any) => ({
+    ...base,
+    fontSize: "12px",
+  }),
+  singleValue: (base: any) => ({
+    ...base,
+    fontSize: "12px",
+  }),
+  multiValue: (base: any) => ({
+    ...base,
+    fontSize: "11px",
+  }),
+};
+
 export function WhatsappMessaginCapaing() {
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+
   const [headerImageUrl, setHeaderImageUrl] = useState("");
-  const sendCampaignMutation = useSendWhatsappCampaign();
-  const { data: rawClients = [] } = useClientes();
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<MetaWhatsappTemplate | null>(null);
+  const [sendMode, setSendMode] = useState<CampaignSendMode>("SELECTED");
+  const [selectionTab, setSelectionTab] = useState<"select" | "table">("table");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedCustomersById, setSelectedCustomersById] = useState<
+    Map<number, NormalizedCliente>
+  >(new Map());
+
+  const [search, setSearch] = useState("");
+  const [purchaseFilter, setPurchaseFilter] = useState<PurchaseFilter>("all");
+  const [phoneFilter, setPhoneFilter] = useState<PhoneFilter>("valid");
+  const [locationFilter, setLocationFilter] = useState("");
+
+  const [simulateQty, setSimulateQty] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [payloadOpen, setPayloadOpen] = useState(false);
+
   const [templateFilters, setTemplateFilters] =
     useState<WhatsappTemplateFilters>({
       name: "",
@@ -123,33 +182,320 @@ export function WhatsappMessaginCapaing() {
       status: "APPROVED",
     });
 
-  console.log(setTemplateFilters);
-
+  const sendCampaignMutation = useSendWhatsappCampaign();
+  const { data: rawClients = [] } = useClientes();
   const { data: templatesResponse, isPending: templatesLoading } =
     useWhatsappTemplates(templateFilters);
 
   const templates = templatesResponse?.data ?? [];
 
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<MetaWhatsappTemplate | null>(null);
-  const [sendMode, setSendMode] = useState<CampaignSendMode>("SELECTED");
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [selectionTab, setSelectionTab] = useState<"select" | "table">(
-    "select",
+  const normalizedClients = useMemo<NormalizedCliente[]>(
+    () =>
+      rawClients.map((client) => ({
+        ...client,
+        fullName: `${client.nombre ?? ""} ${client.apellidos ?? ""}`.trim(),
+        normalizedPhone: isValidPhone(client.telefono)
+          ? normalizePhone(client.telefono!)
+          : (client.telefono ?? ""),
+        isValidPhone: isValidPhone(client.telefono),
+      })),
+    [rawClients],
   );
-  const [search, setSearch] = useState("");
-  const [purchaseFilter, setPurchaseFilter] = useState<PurchaseFilter>("all");
-  const [phoneFilter, setPhoneFilter] = useState<PhoneFilter>("valid");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [simulateQty, setSimulateQty] = useState("");
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [payloadOpen, setPayloadOpen] = useState(false);
+
+  const clientsById = useMemo(() => {
+    return new Map(normalizedClients.map((client) => [client.id, client]));
+  }, [normalizedClients]);
+
+  const validClients = useMemo(
+    () => normalizedClients.filter((client) => client.isValidPhone),
+    [normalizedClients],
+  );
+
+  const filteredClients = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    const loc = locationFilter.toLowerCase().trim();
+
+    return normalizedClients.filter((client) => {
+      if (phoneFilter === "valid" && !client.isValidPhone) return false;
+      if (phoneFilter === "invalid" && client.isValidPhone) return false;
+
+      if (purchaseFilter === "with_purchases" && client._count.compras === 0) {
+        return false;
+      }
+
+      if (purchaseFilter === "without_purchases" && client._count.compras > 0) {
+        return false;
+      }
+
+      if (q) {
+        const haystack = [
+          client.nombre,
+          client.apellidos,
+          client.telefono,
+          client.direccion,
+          client.dpi,
+          client.nit,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        if (!haystack.includes(q)) return false;
+      }
+
+      if (loc && !client.direccion?.toLowerCase().includes(loc)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [normalizedClients, search, purchaseFilter, phoneFilter, locationFilter]);
+
+  const tableValidClients = useMemo(
+    () => filteredClients.filter((client) => client.isValidPhone),
+    [filteredClients],
+  );
+
+  const tableInvalidCount = useMemo(
+    () => filteredClients.filter((client) => !client.isValidPhone).length,
+    [filteredClients],
+  );
+
+  const selectedClients = useMemo(() => {
+    return Array.from(selectedCustomersById.values()).filter(
+      (client) => client.isValidPhone,
+    );
+  }, [selectedCustomersById]);
+
+  const effectiveSelectedIds = useMemo<Set<number>>(() => {
+    return selectedIds;
+  }, [selectedIds]);
+
+  const allVisibleSelected = useMemo(() => {
+    return (
+      tableValidClients.length > 0 &&
+      tableValidClients.every((client) => selectedIds.has(client.id))
+    );
+  }, [tableValidClients, selectedIds]);
+
+  const someVisibleSelected = useMemo(() => {
+    return tableValidClients.some((client) => selectedIds.has(client.id));
+  }, [tableValidClients, selectedIds]);
+
+  const selectOptions = useMemo(
+    () =>
+      tableValidClients.map((client) => ({
+        value: client.id,
+        label: `${client.fullName} · ${client.normalizedPhone}`,
+        searchHint: [
+          client.nombre,
+          client.apellidos,
+          client.telefono,
+          client.direccion,
+          client.dpi,
+          client.nit,
+          String(client._count.compras),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase(),
+        client,
+      })),
+    [tableValidClients],
+  );
+
+  const selectValue = useMemo(
+    () => selectOptions.filter((option) => selectedIds.has(option.value)),
+    [selectOptions, selectedIds],
+  );
+
+  const rowVirtualizer = useVirtualizer({
+    count: tableValidClients.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 56,
+    overscan: 8,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+
+  const unitCost = useMemo(
+    () =>
+      selectedTemplate
+        ? getTemplateCostByCategory(
+            selectedTemplate.category as WhatsappTemplateCategory,
+          )
+        : 0,
+    [selectedTemplate],
+  );
+
+  const totalEstimated = useMemo(
+    () => selectedClients.length * unitCost,
+    [selectedClients.length, unitCost],
+  );
+
+  const simulatedTotal = useMemo(() => {
+    const qty = parseInt(simulateQty, 10);
+
+    return isNaN(qty) || qty <= 0 ? null : qty * unitCost;
+  }, [simulateQty, unitCost]);
+
+  const selectedTemplateHeader = useMemo(() => {
+    return selectedTemplate?.components?.find(
+      (component) => component.type?.toUpperCase() === "HEADER",
+    );
+  }, [selectedTemplate]);
+
+  const selectedTemplateNeedsImage = selectedTemplateHeader?.format === "IMAGE";
+  const hasHeaderImageUrl = Boolean(headerImageUrl.trim());
+  const isMissingRequiredImageUrl =
+    selectedTemplateNeedsImage && !hasHeaderImageUrl;
+
+  const hasActiveFilters =
+    search !== "" ||
+    purchaseFilter !== "all" ||
+    phoneFilter !== "valid" ||
+    locationFilter !== "";
+
+  const handleToggleId = useCallback(
+    (id: number) => {
+      const customer = clientsById.get(id);
+
+      if (!customer?.isValidPhone) return;
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+
+        return next;
+      });
+
+      setSelectedCustomersById((prev) => {
+        const next = new Map(prev);
+
+        if (next.has(customer.id)) {
+          next.delete(customer.id);
+        } else {
+          next.set(customer.id, customer);
+        }
+
+        return next;
+      });
+    },
+    [clientsById],
+  );
+
+  const handleToggleAllVisible = useCallback(
+    (checked: boolean) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+
+        tableValidClients.forEach((client) => {
+          if (checked) {
+            next.add(client.id);
+          } else {
+            next.delete(client.id);
+          }
+        });
+
+        return next;
+      });
+
+      setSelectedCustomersById((prev) => {
+        const next = new Map(prev);
+
+        tableValidClients.forEach((client) => {
+          if (checked) {
+            next.set(client.id, client);
+          } else {
+            next.delete(client.id);
+          }
+        });
+
+        return next;
+      });
+    },
+    [tableValidClients],
+  );
+
+  const handleSelectedIdsChange = useCallback(
+    (nextVisibleSelectedIds: Set<number>) => {
+      const visibleIds = new Set(tableValidClients.map((client) => client.id));
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+
+        visibleIds.forEach((id) => {
+          next.delete(id);
+        });
+
+        nextVisibleSelectedIds.forEach((id) => {
+          next.add(id);
+        });
+
+        return next;
+      });
+
+      setSelectedCustomersById((prev) => {
+        const next = new Map(prev);
+
+        visibleIds.forEach((id) => {
+          if (!nextVisibleSelectedIds.has(id)) {
+            next.delete(id);
+          }
+        });
+
+        nextVisibleSelectedIds.forEach((id) => {
+          const customer = clientsById.get(id);
+
+          if (customer?.isValidPhone) {
+            next.set(id, customer);
+          }
+        });
+
+        return next;
+      });
+    },
+    [tableValidClients, clientsById],
+  );
+
+  const handleRemoveSelectedCustomer = useCallback((customerId: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(customerId);
+      return next;
+    });
+
+    setSelectedCustomersById((prev) => {
+      const next = new Map(prev);
+      next.delete(customerId);
+      return next;
+    });
+  }, []);
+
+  const handleClearSelectedCustomers = useCallback(() => {
+    setSelectedIds(new Set<number>());
+    setSelectedCustomersById(new Map());
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setSearch("");
+    setPurchaseFilter("all");
+    setPhoneFilter("valid");
+    setLocationFilter("");
+  }, []);
 
   const handleResetAfterSuccess = useCallback(() => {
     setSelectedTemplate(null);
     setSendMode("SELECTED");
     setSelectedIds(new Set<number>());
-    setSelectionTab("select");
+    setSelectedCustomersById(new Map());
+    setSelectionTab("table");
 
     setSearch("");
     setPurchaseFilter("all");
@@ -170,108 +516,6 @@ export function WhatsappMessaginCapaing() {
     });
   }, []);
 
-  const normalizedClients = useMemo<NormalizedCliente[]>(
-    () =>
-      rawClients.map((c) => ({
-        ...c,
-        fullName: `${c.nombre ?? ""} ${c.apellidos ?? ""}`.trim(),
-        normalizedPhone: isValidPhone(c.telefono)
-          ? normalizePhone(c.telefono!)
-          : (c.telefono ?? ""),
-        isValidPhone: isValidPhone(c.telefono),
-      })),
-    [rawClients],
-  );
-
-  const validClients = useMemo(
-    () => normalizedClients.filter((c) => c.isValidPhone),
-    [normalizedClients],
-  );
-
-  const filteredClients = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    const loc = locationFilter.toLowerCase().trim();
-
-    return normalizedClients.filter((c) => {
-      // phone filter
-      if (phoneFilter === "valid" && !c.isValidPhone) return false;
-      if (phoneFilter === "invalid" && c.isValidPhone) return false;
-
-      // purchase filter
-      if (purchaseFilter === "with_purchases" && c._count.compras === 0)
-        return false;
-      if (purchaseFilter === "without_purchases" && c._count.compras > 0)
-        return false;
-
-      // text search
-      if (q) {
-        const haystack = [
-          c.nombre,
-          c.apellidos,
-          c.telefono,
-          c.direccion,
-          c.dpi,
-          c.nit,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-
-      // location filter
-      if (loc && !c.direccion?.toLowerCase().includes(loc)) return false;
-
-      return true;
-    });
-  }, [normalizedClients, search, purchaseFilter, phoneFilter, locationFilter]);
-
-  const effectiveSelectedIds = useMemo<Set<number>>(() => {
-    if (sendMode === "ALL_VALID") return new Set(validClients.map((c) => c.id));
-    return selectedIds;
-  }, [sendMode, validClients, selectedIds]);
-
-  const selectedClients = useMemo(
-    () =>
-      normalizedClients.filter(
-        (c) => effectiveSelectedIds.has(c.id) && c.isValidPhone,
-      ),
-    [normalizedClients, effectiveSelectedIds],
-  );
-
-  const unitCost = useMemo(
-    () =>
-      selectedTemplate
-        ? getTemplateCostByCategory(
-            selectedTemplate.category as WhatsappTemplateCategory,
-          )
-        : 0,
-    [selectedTemplate],
-  );
-
-  const totalEstimated = useMemo(
-    () => selectedClients.length * unitCost,
-    [selectedClients.length, unitCost],
-  );
-
-  const simulatedTotal = useMemo(() => {
-    const qty = parseInt(simulateQty, 10);
-    return isNaN(qty) || qty <= 0 ? null : qty * unitCost;
-  }, [simulateQty, unitCost]);
-
-  const selectedTemplateHeader = useMemo(() => {
-    return selectedTemplate?.components?.find(
-      (component) => component.type?.toUpperCase() === "HEADER",
-    );
-  }, [selectedTemplate]);
-
-  const selectedTemplateNeedsImage = selectedTemplateHeader?.format === "IMAGE";
-
-  const hasHeaderImageUrl = Boolean(headerImageUrl?.trim());
-
-  const isMissingRequiredImageUrl =
-    selectedTemplateNeedsImage && !hasHeaderImageUrl;
-
   const payload = useMemo<CampaignPayload | null>(() => {
     if (!selectedTemplate) return null;
 
@@ -287,11 +531,11 @@ export function WhatsappMessaginCapaing() {
           : undefined,
 
       sendMode,
-      customerIds: selectedClients.map((c) => c.id),
-      recipients: selectedClients.map((c) => ({
-        customerId: c.id,
-        fullName: c.fullName,
-        phone: c.normalizedPhone,
+      customerIds: selectedClients.map((client) => client.id),
+      recipients: selectedClients.map((client) => ({
+        customerId: client.id,
+        fullName: client.fullName,
+        phone: client.normalizedPhone,
       })),
       estimatedCost: {
         currency: "USD",
@@ -324,45 +568,8 @@ export function WhatsappMessaginCapaing() {
   const isReadyToSend =
     selectedTemplate !== null &&
     selectedTemplate.status === "APPROVED" &&
-    selectedClients.length > 0;
-
-  const handleToggleId = useCallback((id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleToggleAllVisible = useCallback(
-    (checked: boolean) => {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filteredClients
-          .filter((c) => c.isValidPhone)
-          .forEach((c) => {
-            if (checked) next.add(c.id);
-            else next.delete(c.id);
-          });
-        return next;
-      });
-    },
-    [filteredClients],
-  );
-
-  const handleClearFilters = useCallback(() => {
-    setSearch("");
-    setPurchaseFilter("all");
-    setPhoneFilter("valid");
-    setLocationFilter("");
-  }, []);
-
-  const hasActiveFilters =
-    search !== "" ||
-    purchaseFilter !== "all" ||
-    phoneFilter !== "valid" ||
-    locationFilter !== "";
+    selectedClients.length > 0 &&
+    !isMissingRequiredImageUrl;
 
   const handleConfirmSend = useCallback(async () => {
     if (!payload) return;
@@ -397,36 +604,10 @@ export function WhatsappMessaginCapaing() {
     }
   }, [payload, sendCampaignMutation, handleResetAfterSuccess]);
 
-  const selectOptions = useMemo(
-    () =>
-      validClients.map((c) => ({
-        value: c.id,
-        label: `${c.fullName} · ${c.normalizedPhone}`,
-        searchHint: [c.nombre, c.apellidos, c.telefono, c.direccion]
-          .join(" ")
-          .toLowerCase(),
-      })),
-    [validClients],
-  );
-
-  const selectValue = useMemo(
-    () => selectOptions.filter((o) => selectedIds.has(o.value)),
-    [selectOptions, selectedIds],
-  );
-
-  const tableValidClients = filteredClients.filter((c) => c.isValidPhone);
-  const tableInvalidCount = filteredClients.filter(
-    (c) => !c.isValidPhone,
-  ).length;
-  const allVisibleSelected =
-    tableValidClients.length > 0 &&
-    tableValidClients.every((c) => effectiveSelectedIds.has(c.id));
-
   return (
     <PageTransition fallbackBackTo="/" titleHeader="Envio de campañas">
       <div className="">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3 items-start">
-          {/* ── Columna izquierda ─────────────────────────────────────────────── */}
           <div className="space-y-3">
             <Card>
               <CardHeader className="p-3 pb-2">
@@ -434,6 +615,7 @@ export function WhatsappMessaginCapaing() {
                   Plantilla
                 </CardTitle>
               </CardHeader>
+
               <CardContent className="p-3 pt-0 space-y-2">
                 {templatesLoading ? (
                   <p className="text-xs text-muted-foreground">
@@ -444,13 +626,15 @@ export function WhatsappMessaginCapaing() {
                     <Select
                       value={selectedTemplate?.id ?? ""}
                       onValueChange={(id) => {
-                        const tpl = templates.find((t) => t.id === id) ?? null;
+                        const tpl =
+                          templates.find((item) => item.id === id) ?? null;
                         setSelectedTemplate(tpl);
                       }}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue placeholder="Seleccionar plantilla..." />
                       </SelectTrigger>
+
                       <SelectContent>
                         {templates.map((tpl) => (
                           <SelectItem
@@ -460,6 +644,7 @@ export function WhatsappMessaginCapaing() {
                           >
                             <span className="flex items-center gap-2">
                               <span className="font-mono">{tpl.name}</span>
+
                               <Badge
                                 variant={getStatusBadgeVariant(tpl.status)}
                                 className="text-[10px] py-0 h-4"
@@ -478,6 +663,7 @@ export function WhatsappMessaginCapaing() {
                           <span className="text-xs font-mono font-medium">
                             {selectedTemplate.name}
                           </span>
+
                           <Badge
                             variant={getStatusBadgeVariant(
                               selectedTemplate.status,
@@ -486,6 +672,7 @@ export function WhatsappMessaginCapaing() {
                           >
                             {getStatusLabel(selectedTemplate.status)}
                           </Badge>
+
                           <Badge
                             variant="outline"
                             className="text-[10px] py-0 h-4"
@@ -494,6 +681,7 @@ export function WhatsappMessaginCapaing() {
                               selectedTemplate.category as WhatsappTemplateCategory,
                             )}
                           </Badge>
+
                           <Badge
                             variant="outline"
                             className="text-[10px] py-0 h-4"
@@ -501,12 +689,14 @@ export function WhatsappMessaginCapaing() {
                             {selectedTemplate.language}
                           </Badge>
                         </div>
+
                         {selectedTemplate.status !== "APPROVED" && (
                           <p className="text-[11px] text-destructive flex items-center gap-1">
                             <AlertTriangle className="size-3" />
                             Solo se pueden enviar plantillas aprobadas.
                           </p>
                         )}
+
                         <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
                           {getBodyPreview(selectedTemplate)}
                         </p>
@@ -522,70 +712,71 @@ export function WhatsappMessaginCapaing() {
                 <CardTitle className="text-xs font-semibold">
                   Destinatarios
                 </CardTitle>
-                {/* Modo ALL_VALID */}
+
                 <div className="flex items-center gap-2">
                   <Checkbox
-                    id="all-valid"
-                    checked={sendMode === "ALL_VALID"}
-                    onCheckedChange={(v) =>
-                      setSendMode(v ? "ALL_VALID" : "SELECTED")
+                    id="all-valid-visible"
+                    checked={
+                      allVisibleSelected
+                        ? true
+                        : someVisibleSelected
+                          ? "indeterminate"
+                          : false
                     }
+                    onCheckedChange={(value) => {
+                      handleToggleAllVisible(value === true);
+                    }}
                   />
-                  <Label htmlFor="all-valid" className="text-xs cursor-pointer">
-                    Todos los válidos ({validClients.length})
+
+                  <Label
+                    htmlFor="all-valid-visible"
+                    className="text-xs cursor-pointer"
+                  >
+                    Seleccionar visibles válidos ({tableValidClients.length})
                   </Label>
                 </div>
               </CardHeader>
-              <CardContent className="p-3 pt-0 space-y-2">
-                {sendMode === "ALL_VALID" && (
-                  <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 p-2">
-                    <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-                    <p className="text-[11px] text-amber-800">
-                      Se enviará a todos los {validClients.length} clientes con
-                      teléfono válido. Puede generar costo alto.
-                    </p>
-                  </div>
-                )}
 
+              <CardContent className="p-3 pt-0 space-y-2">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <Input
                     placeholder="Buscar..."
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(event) => setSearch(event.target.value)}
                     className="h-7 text-xs col-span-2"
                   />
+
                   <Input
                     placeholder="Localidad..."
                     value={locationFilter}
-                    onChange={(e) => setLocationFilter(e.target.value)}
+                    onChange={(event) => setLocationFilter(event.target.value)}
                     className="h-7 text-xs"
                   />
-                  <div className="flex gap-1">
-                    <Select
-                      value={purchaseFilter}
-                      onValueChange={(v) =>
-                        setPurchaseFilter(v as PurchaseFilter)
-                      }
-                    >
-                      <SelectTrigger className="h-7 text-xs flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all" className="text-xs">
-                          Todas las compras
-                        </SelectItem>
-                        <SelectItem value="with_purchases" className="text-xs">
-                          Con compras
-                        </SelectItem>
-                        <SelectItem
-                          value="without_purchases"
-                          className="text-xs"
-                        >
-                          Sin compras
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+
+                  <Select
+                    value={purchaseFilter}
+                    onValueChange={(value) =>
+                      setPurchaseFilter(value as PurchaseFilter)
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">
+                        Todas las compras
+                      </SelectItem>
+
+                      <SelectItem value="with_purchases" className="text-xs">
+                        Con compras
+                      </SelectItem>
+
+                      <SelectItem value="without_purchases" className="text-xs">
+                        Sin compras
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
@@ -593,24 +784,29 @@ export function WhatsappMessaginCapaing() {
                     <Label className="text-xs text-muted-foreground">
                       Teléfono:
                     </Label>
-                    {(["valid", "invalid", "all"] as PhoneFilter[]).map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => setPhoneFilter(f)}
-                        className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
-                          phoneFilter === f
-                            ? "bg-foreground text-background border-foreground"
-                            : "border-border text-muted-foreground hover:border-foreground"
-                        }`}
-                      >
-                        {f === "valid"
-                          ? "Válidos"
-                          : f === "invalid"
-                            ? "Inválidos"
-                            : "Todos"}
-                      </button>
-                    ))}
+
+                    {(["valid", "invalid", "all"] as PhoneFilter[]).map(
+                      (filter) => (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => setPhoneFilter(filter)}
+                          className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                            phoneFilter === filter
+                              ? "bg-foreground text-background border-foreground"
+                              : "border-border text-muted-foreground hover:border-foreground"
+                          }`}
+                        >
+                          {filter === "valid"
+                            ? "Válidos"
+                            : filter === "invalid"
+                              ? "Inválidos"
+                              : "Todos"}
+                        </button>
+                      ),
+                    )}
                   </div>
+
                   {hasActiveFilters && (
                     <Button
                       variant="ghost"
@@ -624,157 +820,308 @@ export function WhatsappMessaginCapaing() {
                   )}
                 </div>
 
-                {sendMode === "SELECTED" && (
-                  <Tabs
-                    value={selectionTab}
-                    onValueChange={(v) =>
-                      setSelectionTab(v as "select" | "table")
-                    }
-                  >
-                    <TabsList className="h-7 text-xs">
-                      <TabsTrigger value="select" className="text-xs h-6 gap-1">
-                        <LayoutList className="size-3" />
-                        Buscador
-                      </TabsTrigger>
-                      <TabsTrigger value="table" className="text-xs h-6 gap-1">
-                        <Table2 className="size-3" />
-                        Tabla
-                      </TabsTrigger>
-                    </TabsList>
+                <Tabs
+                  value={selectionTab}
+                  onValueChange={(value) =>
+                    setSelectionTab(value as "select" | "table")
+                  }
+                >
+                  <TabsList className="h-7 text-xs">
+                    <TabsTrigger value="table" className="text-xs h-6 gap-1">
+                      <Table2 className="size-3" />
+                      Tabla
+                    </TabsTrigger>
 
-                    {/* React Select multi */}
-                    <TabsContent value="select" className="mt-2">
-                      <ReactSelectComponent
-                        isMulti
-                        options={selectOptions}
-                        value={selectValue}
-                        onChange={(selected) => {
-                          setSelectedIds(
-                            new Set(
-                              (selected as typeof selectOptions).map(
-                                (o) => o.value,
-                              ),
-                            ),
-                          );
-                        }}
-                        filterOption={(option, inputValue) =>
-                          option.data.searchHint.includes(
-                            inputValue.toLowerCase(),
-                          )
-                        }
-                        placeholder="Buscar y seleccionar clientes..."
-                        noOptionsMessage={() => "Sin resultados"}
-                        className="text-black"
-                        styles={{
-                          control: (base) => ({
-                            ...base,
-                            minHeight: "32px",
-                            fontSize: "12px",
-                            borderColor: "hsl(var(--border))",
-                          }),
-                          option: (base) => ({ ...base, fontSize: "12px" }),
-                          multiValue: (base) => ({ ...base, fontSize: "11px" }),
-                        }}
-                      />
-                    </TabsContent>
+                    <TabsTrigger value="select" className="text-xs h-6 gap-1">
+                      <LayoutList className="size-3" />
+                      Buscador
+                    </TabsTrigger>
+                  </TabsList>
 
-                    <TabsContent value="table" className="mt-2">
-                      {tableInvalidCount > 0 && (
-                        <p className="text-[11px] text-muted-foreground mb-1">
-                          {tableInvalidCount} cliente(s) excluido(s) por
-                          teléfono inválido.
-                        </p>
-                      )}
-                      <div className="border rounded-md overflow-auto max-h-64">
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/60 sticky top-0 z-10">
-                            <tr>
-                              <th className="w-8 p-2 text-left">
-                                <Checkbox
-                                  checked={allVisibleSelected}
-                                  onCheckedChange={(v) =>
-                                    handleToggleAllVisible(!!v)
-                                  }
-                                  aria-label="Seleccionar todos"
-                                />
-                              </th>
-                              <th className="p-2 text-left font-medium text-muted-foreground">
-                                Cliente
-                              </th>
-                              <th className="p-2 text-left font-medium text-muted-foreground">
-                                Teléfono
-                              </th>
-                              <th className="p-2 text-left font-medium text-muted-foreground hidden sm:table-cell">
-                                Dirección
-                              </th>
-                              <th className="p-2 text-center font-medium text-muted-foreground">
-                                Compras
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {tableValidClients.length === 0 ? (
-                              <tr>
-                                <td
-                                  colSpan={5}
-                                  className="p-4 text-center text-muted-foreground"
-                                >
-                                  Sin clientes para mostrar.
-                                </td>
-                              </tr>
-                            ) : (
-                              tableValidClients.map((c) => (
-                                <tr
-                                  key={c.id}
-                                  className="border-t hover:bg-muted/30 cursor-pointer"
-                                  onClick={() => handleToggleId(c.id)}
-                                >
-                                  <td className="p-2">
-                                    <Checkbox
-                                      checked={effectiveSelectedIds.has(c.id)}
-                                      onCheckedChange={() =>
-                                        handleToggleId(c.id)
-                                      }
-                                      onClick={(e) => e.stopPropagation()}
-                                      aria-label={`Seleccionar ${c.fullName}`}
-                                    />
-                                  </td>
-                                  <td className="p-2 font-medium">
-                                    {c.fullName || "—"}
-                                  </td>
-                                  <td className="p-2 font-mono">
-                                    {c.normalizedPhone}
-                                  </td>
-                                  <td className="p-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">
-                                    {c.direccion || "—"}
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    {c._count.compras}
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
+                  <TabsContent value="table" className="mt-2">
+                    {tableInvalidCount > 0 && (
+                      <p className="text-[11px] text-muted-foreground mb-1">
+                        {tableInvalidCount} cliente(s) excluido(s) por teléfono
+                        inválido.
+                      </p>
+                    )}
+
+                    <div className="rounded-md border">
+                      <div
+                        role="table"
+                        aria-label="Clientes válidos filtrados"
+                        className="w-full text-xs"
+                      >
+                        <div
+                          role="row"
+                          className="grid grid-cols-[40px_minmax(160px,1fr)_120px_80px] sm:grid-cols-[40px_minmax(160px,1fr)_120px_minmax(140px,1fr)_80px] border-b bg-muted/60"
+                        >
+                          <div role="columnheader" className="p-2">
+                            <Checkbox
+                              checked={
+                                allVisibleSelected
+                                  ? true
+                                  : someVisibleSelected
+                                    ? "indeterminate"
+                                    : false
+                              }
+                              onCheckedChange={(value) =>
+                                handleToggleAllVisible(value === true)
+                              }
+                              aria-label="Seleccionar todos los clientes visibles"
+                            />
+                          </div>
+
+                          <div
+                            role="columnheader"
+                            className="p-2 font-medium text-muted-foreground"
+                          >
+                            Cliente
+                          </div>
+
+                          <div
+                            role="columnheader"
+                            className="p-2 font-medium text-muted-foreground"
+                          >
+                            Teléfono
+                          </div>
+
+                          <div
+                            role="columnheader"
+                            className="hidden p-2 font-medium text-muted-foreground sm:block"
+                          >
+                            Dirección
+                          </div>
+
+                          <div
+                            role="columnheader"
+                            className="p-2 text-center font-medium text-muted-foreground"
+                          >
+                            Compras
+                          </div>
+                        </div>
+
+                        {tableValidClients.length === 0 ? (
+                          <div className="p-4 text-center text-muted-foreground">
+                            Sin clientes para mostrar.
+                          </div>
+                        ) : (
+                          <div
+                            ref={tableContainerRef}
+                            className="max-h-72 overflow-auto"
+                          >
+                            <div
+                              role="rowgroup"
+                              style={{
+                                height: `${totalSize}px`,
+                                width: "100%",
+                                position: "relative",
+                              }}
+                            >
+                              {virtualRows.map((virtualRow) => {
+                                const client =
+                                  tableValidClients[virtualRow.index];
+
+                                if (!client) return null;
+
+                                return (
+                                  <div
+                                    key={client.id}
+                                    role="row"
+                                    className="absolute left-0 top-0 grid w-full cursor-pointer grid-cols-[40px_minmax(160px,1fr)_120px_80px] sm:grid-cols-[40px_minmax(160px,1fr)_120px_minmax(140px,1fr)_80px] items-center border-b text-xs hover:bg-muted/30"
+                                    style={{
+                                      minHeight: `${virtualRow.size}px`,
+                                      transform: `translateY(${virtualRow.start}px)`,
+                                    }}
+                                    onClick={() => handleToggleId(client.id)}
+                                  >
+                                    <div role="cell" className="p-2">
+                                      <Checkbox
+                                        checked={effectiveSelectedIds.has(
+                                          client.id,
+                                        )}
+                                        onCheckedChange={() =>
+                                          handleToggleId(client.id)
+                                        }
+                                        onClick={(event) =>
+                                          event.stopPropagation()
+                                        }
+                                        aria-label={`Seleccionar ${client.fullName}`}
+                                      />
+                                    </div>
+
+                                    <div role="cell" className="min-w-0 p-2">
+                                      <p className="truncate font-medium">
+                                        {client.fullName || "—"}
+                                      </p>
+
+                                      {(client.nit || client.dpi) && (
+                                        <p className="truncate text-[11px] text-muted-foreground">
+                                          {client.nit
+                                            ? `NIT: ${client.nit}`
+                                            : `DPI: ${client.dpi}`}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <div role="cell" className="p-2 font-mono">
+                                      {client.normalizedPhone || "—"}
+                                    </div>
+
+                                    <div
+                                      role="cell"
+                                      className="hidden min-w-0 p-2 text-muted-foreground sm:block"
+                                    >
+                                      <span className="block truncate">
+                                        {client.direccion || "—"}
+                                      </span>
+                                    </div>
+
+                                    <div
+                                      role="cell"
+                                      className="p-2 text-center font-mono"
+                                    >
+                                      {client._count.compras}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </TabsContent>
-                  </Tabs>
-                )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="select" className="mt-2">
+                    <ReactSelectComponent
+                      isMulti
+                      options={selectOptions}
+                      value={selectValue}
+                      onChange={(selected) => {
+                        const selectedOptions =
+                          selected as typeof selectOptions;
+
+                        handleSelectedIdsChange(
+                          new Set(
+                            selectedOptions.map((option) => option.value),
+                          ),
+                        );
+                      }}
+                      filterOption={(option, inputValue) => {
+                        const searchValue = inputValue.toLowerCase().trim();
+
+                        if (!searchValue) return true;
+
+                        return option.data.searchHint.includes(searchValue);
+                      }}
+                      formatOptionLabel={(option) => (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-medium">
+                            {option.client.fullName || "Cliente sin nombre"}
+                          </span>
+
+                          <span className="text-[11px] text-muted-foreground">
+                            {option.client.normalizedPhone || "Sin teléfono"} ·{" "}
+                            {option.client._count.compras} compra(s)
+                          </span>
+                        </div>
+                      )}
+                      placeholder="Buscar y seleccionar clientes..."
+                      noOptionsMessage={() => "Sin clientes válidos"}
+                      className="text-black"
+                      styles={reactSelectStyles}
+                    />
+                  </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
           </div>
 
-          {/* ── Columna derecha ────────────────────────────────────────────────── */}
           <div className="space-y-3">
             <Card>
               <CardContent className="p-3 space-y-1">
                 <p className="text-xs font-semibold mb-2">Clientes</p>
-                <StatRow
-                  icon={<Send className="size-3 text-primary" />}
-                  label="Seleccionados"
-                  value={selectedClients.length}
-                  bold
-                />
+
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="w-full rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={selectedClients.length === 0}
+                    >
+                      <StatRow
+                        icon={<Send className="size-3 text-primary" />}
+                        label="Seleccionados"
+                        value={selectedClients.length}
+                        bold
+                      />
+                    </button>
+                  </DialogTrigger>
+
+                  <DialogContent className="max-w-md p-3">
+                    <DialogHeader className="space-y-1">
+                      <DialogTitle className="text-sm">
+                        Clientes seleccionados
+                      </DialogTitle>
+                    </DialogHeader>
+
+                    <div className="max-h-80 overflow-auto rounded-md border">
+                      {selectedClients.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground">
+                          No hay clientes seleccionados.
+                        </div>
+                      ) : (
+                        <div className="divide-y">
+                          {selectedClients.map((client) => (
+                            <div
+                              key={client.id}
+                              className="flex items-center justify-between gap-2 p-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-medium">
+                                  {client.fullName || "Cliente sin nombre"}
+                                </p>
+
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {client.normalizedPhone || "Sin teléfono"} ·{" "}
+                                  {client._count.compras} compra(s)
+                                </p>
+                              </div>
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 shrink-0 px-2 text-[11px]"
+                                onClick={() =>
+                                  handleRemoveSelectedCustomer(client.id)
+                                }
+                              >
+                                Quitar
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedClients.length > 0 && (
+                      <DialogFooter>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={handleClearSelectedCustomers}
+                        >
+                          Limpiar todos
+                        </Button>
+                      </DialogFooter>
+                    )}
+                  </DialogContent>
+                </Dialog>
+
                 <Separator className="my-1" />
 
                 <StatRow
@@ -782,6 +1129,7 @@ export function WhatsappMessaginCapaing() {
                   label="Válidos"
                   value={validClients.length}
                 />
+
                 <StatRow
                   icon={<XCircle className="size-3 text-destructive" />}
                   label="Excluidos"
@@ -790,7 +1138,6 @@ export function WhatsappMessaginCapaing() {
               </CardContent>
             </Card>
 
-            {/* Estimador de costos */}
             <Card>
               <CardHeader className="p-3 pb-2">
                 <CardTitle className="text-xs font-semibold flex items-center gap-1">
@@ -798,6 +1145,7 @@ export function WhatsappMessaginCapaing() {
                   Estimación de gasto
                 </CardTitle>
               </CardHeader>
+
               <CardContent className="p-3 pt-0 space-y-1">
                 <StatRow
                   label="Categoría"
@@ -809,14 +1157,18 @@ export function WhatsappMessaginCapaing() {
                       : "—"
                   }
                 />
+
                 <StatRow
                   label="Costo unitario"
                   value={
                     unitCost > 0 ? `$${unitCost.toFixed(4)}` : "No configurado"
                   }
                 />
+
                 <StatRow label="Destinatarios" value={selectedClients.length} />
+
                 <Separator className="my-1" />
+
                 <StatRow
                   label="Total estimado"
                   value={unitCost > 0 ? `$${totalEstimated.toFixed(4)}` : "—"}
@@ -827,15 +1179,17 @@ export function WhatsappMessaginCapaing() {
                   <Label className="text-[11px] text-muted-foreground">
                     Simular cantidad
                   </Label>
+
                   <div className="flex gap-1 items-center">
                     <Input
                       type="number"
                       min="0"
                       placeholder="Ej. 500"
                       value={simulateQty}
-                      onChange={(e) => setSimulateQty(e.target.value)}
+                      onChange={(event) => setSimulateQty(event.target.value)}
                       className="h-7 text-xs"
                     />
+
                     {simulatedTotal !== null && (
                       <span className="text-xs font-mono whitespace-nowrap text-muted-foreground">
                         = ${simulatedTotal.toFixed(4)}
@@ -846,8 +1200,6 @@ export function WhatsappMessaginCapaing() {
               </CardContent>
             </Card>
 
-            {/* Resumen + Enviar */}
-
             {selectedTemplateNeedsImage && (
               <div className="rounded-md border bg-muted/30 p-2 space-y-1">
                 <Label className="text-xs">
@@ -856,7 +1208,7 @@ export function WhatsappMessaginCapaing() {
 
                 <Input
                   value={headerImageUrl}
-                  onChange={(e) => setHeaderImageUrl(e.target.value)}
+                  onChange={(event) => setHeaderImageUrl(event.target.value)}
                   placeholder="https://..."
                   className="h-8 text-xs"
                 />
@@ -880,12 +1232,14 @@ export function WhatsappMessaginCapaing() {
                   Resumen
                 </CardTitle>
               </CardHeader>
+
               <CardContent className="p-3 pt-0 space-y-1">
                 <StatRow
                   label="Plantilla"
                   value={selectedTemplate?.name ?? "—"}
                   mono
                 />
+
                 <StatRow
                   label="Categoría"
                   value={
@@ -896,26 +1250,34 @@ export function WhatsappMessaginCapaing() {
                       : "—"
                   }
                 />
+
                 <StatRow label="Seleccionados" value={selectedClients.length} />
+
                 <StatRow
                   label="Costo estimado"
                   value={unitCost > 0 ? `$${totalEstimated.toFixed(4)}` : "—"}
                 />
+
                 <Separator className="my-1" />
+
                 <div className="flex items-center gap-1 py-1">
                   {isReadyToSend ? (
                     <CheckCircle2 className="size-3 text-emerald-600" />
                   ) : (
                     <XCircle className="size-3 text-destructive" />
                   )}
+
                   <span
-                    className={`text-xs font-medium ${isReadyToSend ? "text-emerald-700" : "text-destructive"}`}
+                    className={`text-xs font-medium ${
+                      isReadyToSend ? "text-emerald-700" : "text-destructive"
+                    }`}
                   >
                     {isReadyToSend
                       ? "Listo para enviar"
                       : "Completa los campos requeridos"}
                   </span>
                 </div>
+
                 <Button
                   size="sm"
                   className="w-full h-8 text-xs mt-1"
@@ -926,10 +1288,10 @@ export function WhatsappMessaginCapaing() {
                   Enviar campaña
                 </Button>
 
-                {/* Payload colapsable */}
                 <button
+                  type="button"
                   className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1 hover:text-foreground transition-colors"
-                  onClick={() => setPayloadOpen((v) => !v)}
+                  onClick={() => setPayloadOpen((value) => !value)}
                 >
                   {payloadOpen ? (
                     <ChevronUp className="size-3" />
@@ -938,6 +1300,7 @@ export function WhatsappMessaginCapaing() {
                   )}
                   {payloadOpen ? "Ocultar" : "Ver"} payload
                 </button>
+
                 {payloadOpen && (
                   <pre className="text-[10px] bg-muted rounded p-2 overflow-auto max-h-40 leading-relaxed">
                     {payload ? JSON.stringify(payload, null, 2) : "Sin datos"}
@@ -959,6 +1322,7 @@ export function WhatsappMessaginCapaing() {
             <div className="space-y-2 py-1">
               <div className="rounded-md bg-destructive/10 border border-destructive/30 p-2 flex gap-2">
                 <AlertTriangle className="size-3 text-destructive shrink-0 mt-0.5" />
+
                 <p className="text-xs text-destructive">
                   Esta acción enviará la campaña por Whatsapp a los clientes
                   seleccionados.
@@ -971,6 +1335,7 @@ export function WhatsappMessaginCapaing() {
                   value={selectedTemplate?.name ?? "—"}
                   mono
                 />
+
                 <ConfirmRow
                   label="Categoría"
                   value={
@@ -981,6 +1346,7 @@ export function WhatsappMessaginCapaing() {
                       : "—"
                   }
                 />
+
                 <ConfirmRow
                   label="Estado"
                   value={
@@ -989,7 +1355,9 @@ export function WhatsappMessaginCapaing() {
                       : "—"
                   }
                 />
+
                 <ConfirmRow label="Clientes" value={selectedClients.length} />
+
                 <ConfirmRow
                   label="Total estimado"
                   value={
@@ -1011,6 +1379,7 @@ export function WhatsappMessaginCapaing() {
               >
                 Cancelar
               </Button>
+
               <Button
                 size="sm"
                 className="text-xs"
@@ -1053,8 +1422,11 @@ function StatRow({
         {icon}
         {label}
       </span>
+
       <span
-        className={`text-xs text-right truncate max-w-[140px] ${bold ? "font-semibold" : ""} ${mono ? "font-mono" : ""}`}
+        className={`text-xs text-right truncate max-w-[140px] ${
+          bold ? "font-semibold" : ""
+        } ${mono ? "font-mono" : ""}`}
       >
         {value}
       </span>
@@ -1076,8 +1448,11 @@ function ConfirmRow({
   return (
     <div className="flex items-center justify-between gap-2 py-0.5 border-b border-border/40 last:border-0">
       <span className="text-muted-foreground">{label}</span>
+
       <span
-        className={`text-right ${bold ? "font-semibold" : ""} ${mono ? "font-mono" : ""}`}
+        className={`text-right ${bold ? "font-semibold" : ""} ${
+          mono ? "font-mono" : ""
+        }`}
       >
         {value}
       </span>

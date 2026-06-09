@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
+  TableMeta,
   useReactTable,
 } from "@tanstack/react-table";
 import {
@@ -43,6 +44,7 @@ import {
   Layers3,
   TriangleAlert,
   RefreshCw,
+  PackageCheck,
 } from "lucide-react";
 import {
   getEstadoBadgeVariant,
@@ -51,10 +53,21 @@ import {
   SendToComprasDTO,
 } from "@/Types/requisiciones/requisiciones-tables";
 import { ProveedorOption, SendToPurchasesDialog } from "./send-to-purchase";
-import { requisicionColumns } from "../columns/columns";
+import { requisicionColumns, RequisitionTableMeta } from "../columns/columns";
 import { PresupuestoPartidaSelect } from "@/Types/costos presupuestales/selects";
 import { formattFecha } from "@/Pages/Utils/Utils";
 import { formattMonedaGT } from "@/utils/formattMoneda";
+import { CreateCompraSinCargoFromRequisicionDto } from "@/hooks/use-requisiciones/use-requisiciones";
+import { AdvancedDialogERP } from "@/utils/components/dialog/advanced-dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ============================================================
 // Sub-component: InfoRow
@@ -89,6 +102,7 @@ interface RequisitionsTableProps {
   error: unknown;
   onRefetch: () => void;
 
+  userId: number;
   // ── Dialog dependencies
   proveedores: ProveedorOption[];
   partidas: PresupuestoPartidaSelect[];
@@ -97,6 +111,12 @@ interface RequisitionsTableProps {
   isSendingToCompras: boolean;
   isDeletingRequisicion: boolean;
   onSendToCompras: (dto: SendToComprasDTO) => void;
+
+  handleRecepcionSinCargo: (
+    dto: CreateCompraSinCargoFromRequisicionDto,
+  ) => Promise<void>;
+  isPendingRecepcionSinCargo: boolean;
+
   onDeleteRequisicion: (id: number) => void;
 }
 
@@ -116,7 +136,15 @@ export function RequisitionsTable({
   isDeletingRequisicion,
   onSendToCompras,
   onDeleteRequisicion,
+  handleRecepcionSinCargo,
+  isPendingRecepcionSinCargo,
 }: RequisitionsTableProps) {
+  const [sinCargoReq, setSinCargoReq] = useState<RequisitionResponseDTO | null>(
+    null,
+  );
+  const [proveedorSinCargoId, setProveedorSinCargoId] = useState<string>("");
+  const [observacionesSinCargo, setObservacionesSinCargo] = useState("");
+
   // ── Dialog state ────────────────────────────────────────────
   const [detailReq, setDetailReq] = useState<RequisitionResponseDTO | null>(
     null,
@@ -127,15 +155,26 @@ export function RequisitionsTable({
   );
 
   // ── Meta callbacks para columnas ────────────────────────────
-  const columnMeta: Record<string, (req: RequisitionResponseDTO) => void> = {
-    onVerDetalle: (req: RequisitionResponseDTO) => setDetailReq(req),
-    onImprimir: (req: RequisitionResponseDTO) => {
-      // Al envolverlo en llaves, la función retorna void en lugar de Window
-      window.open(`/pdf-requisicion/${req.id}`, "_blank");
-    },
-    onSendToCompras: (req: RequisitionResponseDTO) => setSendReq(req),
-    onDelete: (req: RequisitionResponseDTO) => setDeleteReq(req),
-  };
+  const columnMeta = useMemo<RequisitionTableMeta>(
+    () => ({
+      onVerDetalle: (req) => setDetailReq(req),
+      onImprimir: (req) => {
+        window.open(`/pdf-requisicion/${req.id}`, "_blank");
+      },
+      onSendToCompras: (req) => setSendReq(req),
+      onRecepcionSinCargo: (req) => {
+        setObservacionesSinCargo("");
+        setProveedorSinCargoId("");
+        setSinCargoReq(req);
+      },
+      onDeleteRequisicion: (req) => setDeleteReq(req),
+
+      isSendingToCompras,
+      isPendingRecepcionSinCargo,
+      isDeletingRequisicion,
+    }),
+    [isSendingToCompras, isPendingRecepcionSinCargo, isDeletingRequisicion],
+  );
   // ── TanStack Table ──────────────────────────────────────────
   const table = useReactTable({
     data,
@@ -143,8 +182,28 @@ export function RequisitionsTable({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize: 10 } },
-    meta: columnMeta,
+    meta: columnMeta as unknown as TableMeta<RequisitionResponseDTO>,
   });
+
+  const handleConfirmRecepcionSinCargo = async () => {
+    if (!sinCargoReq) return;
+
+    await handleRecepcionSinCargo({
+      requisicionID: sinCargoReq.id,
+      userID: sinCargoReq.usuario.id,
+      proveedorId: proveedorSinCargoId
+        ? Number(proveedorSinCargoId)
+        : undefined,
+      sucursalId: sinCargoReq.sucursal.id,
+      observaciones:
+        observacionesSinCargo.trim() ||
+        `Recepción sin gasto desde requisición ${sinCargoReq.folio}`,
+    });
+
+    setSinCargoReq(null);
+    setObservacionesSinCargo("");
+    setProveedorSinCargoId("");
+  };
 
   const { pageIndex, pageSize } = table.getState().pagination;
   const totalItems = data.length;
@@ -544,6 +603,89 @@ export function RequisitionsTable({
           </div>
         </DialogContent>
       </Dialog>
+
+      <AdvancedDialogERP
+        showIcon={false}
+        maxWidth="sm"
+        contentCard={false}
+        showDivider={false}
+        iconAnimation={false}
+        open={!!sinCargoReq}
+        onOpenChange={(open) => {
+          if (!open && !isPendingRecepcionSinCargo) {
+            setSinCargoReq(null);
+            setObservacionesSinCargo("");
+            setProveedorSinCargoId("");
+          }
+        }}
+        title="Enviar sin gasto"
+        description={
+          sinCargoReq
+            ? `La requisición ${sinCargoReq.folio} se enviará a compras, se recepcionará automáticamente y entrará a stock sin generar pago.`
+            : "Recepcionar requisición sin gasto."
+        }
+        confirmButton={{
+          label: "Confirmar recepción",
+          disabled: isPendingRecepcionSinCargo,
+          onClick: handleConfirmRecepcionSinCargo,
+        }}
+        cancelButton={{
+          label: "Cancelar",
+          disabled: isPendingRecepcionSinCargo,
+        }}
+      >
+        <div className="space-y-3">
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+            <div className="flex items-center gap-2 font-medium">
+              <PackageCheck className="h-4 w-4" />
+              Recepción sin gasto
+            </div>
+
+            <p className="mt-1 text-muted-foreground">
+              Este flujo creará la compra como historial, recepcionará los
+              productos y aumentará stock sin generar movimiento financiero.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Proveedor</Label>
+
+            <Select
+              value={proveedorSinCargoId}
+              onValueChange={setProveedorSinCargoId}
+              disabled={isPendingRecepcionSinCargo}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Seleccionar proveedor (opcional)" />
+              </SelectTrigger>
+
+              <SelectContent>
+                {proveedores.map((proveedor) => (
+                  <SelectItem
+                    key={proveedor.id}
+                    value={String(proveedor.id)}
+                    className="text-xs"
+                  >
+                    {proveedor.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Observaciones</Label>
+
+            <Textarea
+              value={observacionesSinCargo}
+              onChange={(e) => setObservacionesSinCargo(e.target.value)}
+              placeholder="Observaciones (opcional)"
+              disabled={isPendingRecepcionSinCargo}
+              className="min-h-16 text-xs resize-none"
+            />
+          </div>
+        </div>
+      </AdvancedDialogERP>
 
       {/* ── Dialog: Enviar a compras ────────────────────────── */}
       <SendToPurchasesDialog

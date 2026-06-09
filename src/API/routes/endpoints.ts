@@ -60,6 +60,8 @@ export const erpEndpoints = {
       `/requisicion/requisicion-to-edit/${id}`,
     update_requisicion: () => `requisicion/update`,
     candidates: `/requisicion/candidatos-requisicion`,
+
+    recepcion_sin_cargo: `/compra-requisicion/requisicion/sin-cargo/recepcionar`,
   },
 
   //COMPRAS

@@ -1,8 +1,9 @@
-import { forwardRef } from "react";
+import { forwardRef, useEffect, useState } from "react";
 import { costoAdicional } from "../page";
-import logo from "@/assets/NOVAPOSPNG.png";
 import { CartItem } from "@/Types/POS/interfaces";
 import { Sucursal } from "@/Types/Sucursal/Sucursal_Info";
+
+const logoUrl = import.meta.env.VITE_APP_LOGO;
 
 interface Props {
   cart: CartItem[];
@@ -17,6 +18,33 @@ interface Props {
   formatCurrency: (n: number) => string;
   costos_adicionales: Array<costoAdicional>;
   sucursal: Sucursal;
+}
+
+async function imageUrlToDataUrl(url: string): Promise<string> {
+  const response = await fetch(url, {
+    mode: "cors",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar el logo: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      resolve(reader.result as string);
+    };
+
+    reader.onerror = () => {
+      reject(new Error("No se pudo convertir el logo a base64"));
+    };
+
+    reader.readAsDataURL(blob);
+  });
 }
 
 const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
@@ -35,17 +63,42 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
     costos_adicionales,
   } = props;
 
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLogo = async () => {
+      try {
+        if (!logoUrl) return;
+
+        const dataUrl = await imageUrlToDataUrl(logoUrl);
+
+        if (!cancelled) {
+          setLogoDataUrl(dataUrl);
+        }
+      } catch (error) {
+        console.error("Error cargando logo de cotización:", error);
+
+        if (!cancelled) {
+          setLogoDataUrl(null);
+        }
+      }
+    };
+
+    loadLogo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const today = new Date();
   const fechaStr = today.toLocaleDateString("es-GT");
 
-  // const VERDE = "#A24BA1"; // morado principal del logo
-  // const VERDE2 = "#C47CC6"; // morado claro / fondo
-  const ROJO = "#F5F5F5"; // rosa/fucsia del logo
-
-  const VERDE = "#2DBE8D"; // verde principal (V y NOVA)
-  const VERDE2 = "#7ED8B8"; // verde claro (variación / hover / fondos suaves)
-  // const NEGRO = "#0A0A0A"; // negro del logo
-  // const GRIS = "#F5F5F5"; // fondo claro
+  const ROJO = "#F5F5F5";
+  const VERDE = "#2DBE8D";
+  const VERDE2 = "#7ED8B8";
 
   return (
     <div
@@ -62,7 +115,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         margin: "0 auto",
       }}
     >
-      {/* ── BARRA SUPERIOR ── */}
       <div
         style={{
           height: "10px",
@@ -72,7 +124,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         }}
       />
 
-      {/* ── CABECERA ── */}
       <div
         style={{
           display: "flex",
@@ -93,6 +144,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
           >
             {sucursal.nombre ?? "N/A"}
           </h1>
+
           <p
             style={{
               margin: "6px 0 0",
@@ -106,14 +158,20 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             Contacto: {sucursal.telefono ?? "N/A"} &nbsp; PBX: {sucursal.pbx}
           </p>
         </div>
-        <img
-          src={logo}
-          alt="Logo Nova Sistemas"
-          style={{ height: "72px", width: "auto", objectFit: "contain" }}
-        />
+
+        {logoDataUrl && (
+          <img
+            src={logoDataUrl}
+            alt="Logo Nova Sistemas"
+            style={{
+              height: "72px",
+              width: "auto",
+              objectFit: "contain",
+            }}
+          />
+        )}
       </div>
 
-      {/* ── TÍTULO SECCIÓN ── */}
       <div style={{ marginBottom: "16px" }}>
         <h2
           style={{
@@ -130,6 +188,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         >
           Detalle de Cotización
         </h2>
+
         {cliente && (
           <p style={{ margin: "6px 0 0", fontSize: "11px", color: "#555" }}>
             Cliente: <strong>{cliente}</strong>
@@ -137,7 +196,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         )}
       </div>
 
-      {/* ── FECHA / VENCIMIENTO / DOC ── */}
       <div
         style={{
           display: "grid",
@@ -151,6 +209,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             <p style={{ margin: 0, fontWeight: 700, fontSize: "11px" }}>
               {label}
             </p>
+
             <p
               style={{
                 margin: 0,
@@ -165,7 +224,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         ))}
       </div>
 
-      {/* ── TABLA PRODUCTOS ── */}
       <table
         style={{
           width: "100%",
@@ -187,6 +245,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             >
               Producto
             </th>
+
             <th
               style={{
                 padding: "7px 8px",
@@ -197,6 +256,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             >
               Precio
             </th>
+
             <th
               style={{
                 padding: "7px 8px",
@@ -207,6 +267,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             >
               Cantidad
             </th>
+
             <th
               style={{
                 padding: "7px 8px",
@@ -219,6 +280,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             </th>
           </tr>
         </thead>
+
         <tbody>
           {cart.map((item, i) => (
             <tr
@@ -226,12 +288,15 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               style={{ backgroundColor: i % 2 === 0 ? "#f4f9f6" : "#fff" }}
             >
               <td style={{ padding: "6px 8px" }}>{item.nombre}</td>
+
               <td style={{ padding: "6px 8px", textAlign: "right" }}>
                 {formatCurrency(item.selectedPrice)}
               </td>
+
               <td style={{ padding: "6px 8px", textAlign: "right" }}>
                 {item.quantity}
               </td>
+
               <td style={{ padding: "6px 8px", textAlign: "right" }}>
                 {formatCurrency(item.selectedPrice * item.quantity)}
               </td>
@@ -240,7 +305,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         </tbody>
       </table>
 
-      {/* ── TABLA COSTOS ADICIONALES ── */}
       {costos_adicionales.length > 0 && (
         <table
           style={{
@@ -262,6 +326,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               >
                 Otros
               </th>
+
               <th
                 style={{
                   padding: "7px 8px",
@@ -272,6 +337,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               >
                 Monto
               </th>
+
               <th
                 style={{
                   padding: "7px 8px",
@@ -284,6 +350,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               </th>
             </tr>
           </thead>
+
           <tbody>
             {costos_adicionales.map((item, i) => (
               <tr
@@ -291,9 +358,11 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
                 style={{ backgroundColor: i % 2 === 0 ? "#f4f9f6" : "#fff" }}
               >
                 <td style={{ padding: "6px 8px" }}>{item.nombre_costo}</td>
+
                 <td style={{ padding: "6px 8px", textAlign: "right" }}>
                   {formatCurrency(item.costo)}
                 </td>
+
                 <td
                   style={{
                     padding: "6px 8px",
@@ -309,7 +378,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         </table>
       )}
 
-      {/* ── RESUMEN FINANCIERO ── */}
       <div
         style={{
           display: "flex",
@@ -318,7 +386,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
           marginTop: "8px",
         }}
       >
-        {/* Notas — izquierda */}
         <div style={{ fontSize: "11px", color: "#555", maxWidth: "55%" }}>
           {comentario && (
             <>
@@ -328,7 +395,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
           )}
         </div>
 
-        {/* Totales — derecha */}
         <div style={{ minWidth: "220px", fontSize: "11px" }}>
           <div
             style={{
@@ -369,13 +435,15 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
               <span style={{ color: "#555" }}>Costos adicionales</span>
               <span>
                 {formatCurrency(
-                  costos_adicionales.reduce((a, c) => a + c.costo, 0),
+                  costos_adicionales.reduce(
+                    (acc, costo) => acc + costo.costo,
+                    0,
+                  ),
                 )}
               </span>
             </div>
           )}
 
-          {/* TOTAL */}
           <div
             style={{
               display: "flex",
@@ -395,10 +463,14 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
             >
               Total
             </span>
+
             <span style={{ fontWeight: 900, fontSize: "15px", color: ROJO }}>
               {formatCurrency(
                 totalConDescuento +
-                  costos_adicionales.reduce((a, c) => a + c.costo, 0),
+                  costos_adicionales.reduce(
+                    (acc, costo) => acc + costo.costo,
+                    0,
+                  ),
               )}
             </span>
           </div>
@@ -416,6 +488,7 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
                 <span>Enganche</span>
                 <span>{formatCurrency(enganche)}</span>
               </div>
+
               <div
                 style={{
                   display: "flex",
@@ -432,7 +505,6 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         </div>
       </div>
 
-      {/* ── BARRA INFERIOR ── */}
       <div
         style={{
           height: "6px",
@@ -446,4 +518,5 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
 });
 
 CotizacionPrint.displayName = "CotizacionPrint";
+
 export default CotizacionPrint;

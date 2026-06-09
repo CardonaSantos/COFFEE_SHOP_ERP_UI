@@ -194,9 +194,7 @@ export default function ProductEditorContainer({
       }
 
       await invalidate(keysToInvalidate);
-    } catch {
-      // manejado por toast.promise
-    }
+    } catch {}
   };
 
   return (
@@ -207,7 +205,6 @@ export default function ProductEditorContainer({
       {mode === "product" && (
         <div className="space-y-8">
           {" "}
-          {/* Espaciado consistente entre secciones */}
           {/* SECCIÓN 1: Información Básica y QR */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
@@ -293,9 +290,7 @@ export function mapProductDto(dto: ProductDetailDTO): ProductCreateDTO {
       nombre: dto.nombre,
       codigoProducto: dto.codigoProducto,
       codigoProveedor: dto.codigoProveedor ?? "",
-      // 🔹 ahora usamos el del server
       stockMinimo: dto.stockMinimo ?? 0,
-      // 🔹 asegurar número
       precioCostoActual: Number(dto.precioCostoActual ?? 0),
 
       categorias: dto.categorias ?? [],
@@ -307,7 +302,7 @@ export function mapProductDto(dto: ProductDetailDTO): ProductCreateDTO {
     prices: (dto.precios ?? []).map((p) => ({
       rol: p.rol,
       orden: p.orden,
-      precio: String(p.precio), // el server ya lo manda string
+      precio: String(p.precio),
     })),
     presentations: (dto.presentaciones ?? []).map((p) => ({
       id: p.id,
@@ -320,7 +315,6 @@ export function mapProductDto(dto: ProductDetailDTO): ProductCreateDTO {
         p.costoReferencialPresentacion ?? "0",
       ),
       descripcion: p.descripcion ?? "",
-      // 🔹 ya viene listo y null-safe desde el server
       stockMinimo: p.stockMinimo ?? 0,
       precios: (p.precios ?? []).map((x) => ({
         rol: x.rol,
@@ -368,7 +362,7 @@ export function mapPresentationDto(
           precio: x.precio,
         })),
         esDefault: !!dto.esDefault,
-        imagenes: dto.imagenesPresentacion, // ExistingImage[]
+        imagenes: dto.imagenesPresentacion,
         activo: dto.activo,
         categorias: dto.categorias,
       },

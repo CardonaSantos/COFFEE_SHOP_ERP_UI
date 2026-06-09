@@ -103,10 +103,8 @@ function useDebounce<T>(value: T, delay = 400) {
 function CotizadorMainPage() {
   const [isScannerMode, setIsScannerMode] = useState(true);
   const [scanInput, setScanInput] = useState("");
-  /** Ref al input del escáner para poder darle focus desde el padre */
   const scanInputRef = useRef<HTMLInputElement>(null);
   // STORE
-  // ─────────────────────────────────────────────────────────────
   const userRol = useStore((state) => state.userRol) ?? "";
   const sucursalId = useStore((state) => state.sucursalId) ?? 0;
   const printRef = useRef<HTMLDivElement>(null);
@@ -117,14 +115,10 @@ function CotizadorMainPage() {
   });
 
   const { data: sucursal } = useGetSucursal(sucursalId);
-  //  CARRITO
-  // ────────────────────────────────────────────const { data: sucursal } = useGetSucursal(sucursalId);─────────────────
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-
   // COTIZADOR (descuento, cuotas, enganche)
-  // ─────────────────────────────────────────────────────────────
 
   const [costosAdicionales, setCostosAdicionales] = useState<
     Array<costoAdicional>
@@ -181,7 +175,6 @@ function CotizadorMainPage() {
   }, [cart, descuento, cuotas, enganche, costosAdicionales]);
 
   //  PAGO & COMPROBANTE
-  // ─────────────────────────────────────────────────────────────
   const [paymentMethod, setPaymentMethod] = useState<MetodoPagoMainPOS>(
     MetodoPagoMainPOS.EFECTIVO,
   );
@@ -192,7 +185,6 @@ function CotizadorMainPage() {
   const isCreditoVenta = paymentMethod === MetodoPagoMainPOS.CREDITO;
 
   // CLIENTE (seleccionado o ad-hoc)
-  // ─────────────────────────────────────────────────────────────
   const [selectedCustomerID, setSelectedCustomerID] = useState<Customer | null>(
     null,
   );
@@ -208,10 +200,8 @@ function CotizadorMainPage() {
   const [imei, setImei] = useState<string>("");
 
   // CRÉDITO
-  // ─────────────────────────────────────────────────────────────
 
   //  BÚSQUEDA & PAGINACIÓN
-  // ─────────────────────────────────────────────────────────────
   const [limit, setLimit] = useState<number>(5);
   const [page, setPage] = useState<number>(1);
   const [search, setSearch] = useState<string>("");
@@ -269,7 +259,6 @@ function CotizadorMainPage() {
   };
 
   //  QUERIES (servidor)
-  // ─────────────────────────────────────────────────────────────
   const {
     data: productsResponse = {
       data: [],
@@ -296,7 +285,6 @@ function CotizadorMainPage() {
   const { data: cats } = useGetCategorias();
 
   // Datos derivados de queries
-  // ─────────────────────────────────────────────────────────────
 
   const productos = Array.isArray(productsResponse.data)
     ? productsResponse.data
@@ -327,14 +315,10 @@ function CotizadorMainPage() {
   }, [isErrorProducts, errorProducts, isErrorCustomers, errorCustomers]);
 
   // UI STATE
-  // ─────────────────────────────────────────────────────────────
-
   const [openImage, setOpenImage] = useState(false);
   const [imagesProduct, setImagesProduct] = useState<string[]>([]);
 
   //  HANDLERS DE CARRITO
-  // ─────────────────────────────────────────────────────────────
-
   const makeUid = (s: SourceType, id: number) => `${s}-${id}`;
 
   const addToCart = (product: ProductoPOS) => {
@@ -424,7 +408,6 @@ function CotizadorMainPage() {
   };
 
   //  MAPPER: producto data → POS
-  // ─────────────────────────────────────────────────────────────
   function defaultMapToCartProduct(p: ProductoData): ProductoPOS {
     return {
       id: p.id,
@@ -529,7 +512,6 @@ function CotizadorMainPage() {
           onToggleScannerMode={handleToggleScannerMode}
           onScanInputChange={(value) => {
             setScanInput(value);
-            // Sincronizar con el estado de búsqueda para que la tabla filtre
             setSearch(value);
             setPage(1);
           }}
