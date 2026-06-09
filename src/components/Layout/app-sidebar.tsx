@@ -184,7 +184,6 @@ const menuItemsAdmin = [
     icon: ShoppingCart,
     label: "Compras",
     submenu: [
-      { icon: Package, label: "Pedidos", href: "/pedidos" },
       { icon: ClipboardList, label: "Requisiciones", href: "/requisiciones" },
       { icon: ReceiptText, label: "Historial de Compras", href: "/compras" },
     ],

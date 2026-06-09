@@ -13,6 +13,17 @@ import { keepPreviousData, useMutation } from "@tanstack/react-query";
 import { erpApi } from "@/API/axiosClientCrm";
 import { presupuesto_partidasQkeys } from "../use-presupuestos-partidas/Qk";
 
+export interface CreateCompraSinCargoFromRequisicionDto {
+  requisicionID: number;
+  userID: number;
+
+  proveedorId?: number | null;
+
+  sucursalId?: number | null;
+
+  observaciones?: string | null;
+}
+
 export interface UpdateRequisitionDto {
   requisicionId: number;
   sucursalId: number;
@@ -144,6 +155,27 @@ export function useGenerarCompra() {
   return erp.useMutationApi<void, dataCreateCompra>(
     "post",
     erpEndpoints.requisiciones.generate_purchase,
+    undefined,
+    {
+      onSuccess: () => {
+        invalidate(requisicionesQkeys.all);
+        invalidate(requisicionesQkeys.all);
+        invalidate(presupuesto_partidasQkeys.all);
+      },
+    },
+  );
+}
+
+/**
+ * RECEPCIONAR UNA REQUISICION/COMPRA SIN GASTO
+ * @returns
+ */
+export function useRecepcionSinCargo() {
+  const invalidate = useInvalidateHandler();
+
+  return erp.useMutationApi<void, CreateCompraSinCargoFromRequisicionDto>(
+    "post",
+    erpEndpoints.requisiciones.recepcion_sin_cargo,
     undefined,
     {
       onSuccess: () => {

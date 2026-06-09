@@ -22,7 +22,7 @@ import dayjs from "dayjs";
 import localizedFormat from "dayjs/plugin/localizedFormat";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import { Avatar, AvatarFallback } from "../ui/avatar";
-import logo from "@/assets/NOVAPOSPNG.png";
+
 import { useNotificationsRealtime } from "@/Web/realtime/notifications/usenot";
 import {
   useApiMutation,
@@ -42,6 +42,7 @@ dayjs.locale("es");
 interface LayoutProps {
   children?: React.ReactNode;
 }
+const logo = import.meta.env.VITE_APP_LOGO;
 
 export default function Layout2({ children }: LayoutProps) {
   const queryClient = useQueryClient();
@@ -188,7 +189,7 @@ export default function Layout2({ children }: LayoutProps) {
                 <img
                   src={logo}
                   alt="Logo"
-                  className="h-10 w-10 sm:h-16 sm:w-16"
+                  className="h-10 w-10 sm:h-12 sm:w-12"
                 />
               </Link>
               <p className="text-sm ">{sucursalInfo?.nombre || ""}</p>

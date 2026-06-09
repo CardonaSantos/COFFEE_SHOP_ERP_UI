@@ -9,18 +9,26 @@ import {
 } from "@/Types/requisiciones/requisiciones-tables";
 import { RequisitionRowActions } from "../components/requisiciones-row-actions";
 import { formattFecha } from "@/Pages/Utils/Utils";
-
 const formatearMoneda = (n: number) =>
-  new Intl.NumberFormat("es-GT", { style: "currency", currency: "GTQ" }).format(
-    n,
-  );
+  new Intl.NumberFormat("es-GT", {
+    style: "currency",
+    currency: "GTQ",
+  }).format(n);
 
-// ============================================================
-// Column definitions (Diseño Vanilla, Compacto y Text-xs)
-// ============================================================
+export interface RequisitionTableMeta {
+  onVerDetalle?: (row: RequisitionResponseDTO) => void;
+  onImprimir?: (row: RequisitionResponseDTO) => void;
+  onSendToCompras?: (row: RequisitionResponseDTO) => void;
+  onRecepcionSinCargo?: (row: RequisitionResponseDTO) => void;
+  onDeleteRequisicion?: (row: RequisitionResponseDTO) => void;
+
+  isSendingToCompras?: boolean;
+  isPendingRecepcionSinCargo?: boolean;
+  isDeletingRequisicion?: boolean;
+}
+
 export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
   [
-    // ── Folio ──────────────────────────────────────────────────
     {
       accessorKey: "folio",
       header: () => <span className="text-xs font-medium">Folio</span>,
@@ -30,8 +38,6 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
         </span>
       ),
     },
-
-    // ── Fecha ──────────────────────────────────────────────────
     {
       accessorKey: "fecha",
       header: () => (
@@ -46,8 +52,6 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
         </span>
       ),
     },
-
-    // ── Sucursal ───────────────────────────────────────────────
     {
       accessorKey: "sucursal.nombre",
       id: "sucursal",
@@ -56,8 +60,6 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
         <span className="text-xs">{row.original.sucursal.nombre}</span>
       ),
     },
-
-    // ── Estado ─────────────────────────────────────────────────
     {
       accessorKey: "estado",
       header: () => <span className="text-xs font-medium">Estado</span>,
@@ -70,8 +72,6 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
         </Badge>
       ),
     },
-
-    // ── Total líneas ────────────────────────────────────────────
     {
       accessorKey: "totalLineas",
       header: () => (
@@ -86,8 +86,6 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
         </Badge>
       ),
     },
-
-    // ── Total ──────────────────────────────────────────────────
     {
       accessorKey: "totalRequisicion",
       header: () => (
@@ -102,17 +100,11 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
         </span>
       ),
     },
-
-    // ── Acciones ───────────────────────────────────────────────
     {
       id: "acciones",
       header: () => <span className="sr-only">Acciones</span>,
       cell: ({ row, table }) => {
-        const meta = table.options.meta as {
-          onVerDetalle?: (row: RequisitionResponseDTO) => void;
-          onImprimir?: (row: RequisitionResponseDTO) => void;
-          onSendToCompras?: (row: RequisitionResponseDTO) => void;
-        };
+        const meta = table.options.meta as RequisitionTableMeta | undefined;
 
         return (
           <div className="flex justify-end">
@@ -121,6 +113,11 @@ export const requisicionColumns: ColumnDef<RequisitionResponseDTO, unknown>[] =
               onVerDetalle={meta?.onVerDetalle ?? (() => {})}
               onImprimir={meta?.onImprimir ?? (() => {})}
               onSendToCompras={meta?.onSendToCompras ?? (() => {})}
+              onRecepcionSinCargo={meta?.onRecepcionSinCargo ?? (() => {})}
+              onDelete={meta?.onDeleteRequisicion}
+              isSendingToCompras={!!meta?.isSendingToCompras}
+              isPendingRecepcionSinCargo={!!meta?.isPendingRecepcionSinCargo}
+              isDeletingRequisicion={!!meta?.isDeletingRequisicion}
             />
           </div>
         );

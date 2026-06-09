@@ -8,10 +8,13 @@ import { ProveedorOption } from "./send-to-purchase";
 import { RequisitionsTable } from "./requisiciones-table";
 import { useGetPresupuestosPartidas } from "@/hooks/use-presupuestos-partidas/use-presupuestos-partidas";
 import {
+  CreateCompraSinCargoFromRequisicionDto,
   useDeleteRequisicion,
   useGenerarCompra,
   useGetRequisiciones,
+  useRecepcionSinCargo,
 } from "@/hooks/use-requisiciones/use-requisiciones";
+import { useStore } from "@/components/Context/ContextSucursal";
 
 const getApiErrorMessageAxios = (err: unknown): string =>
   (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -20,6 +23,7 @@ const getApiErrorMessageAxios = (err: unknown): string =>
   "Error desconocido";
 
 export function RequisicionesPage() {
+  const userId = useStore((state) => state.userId) ?? 0;
   const { data: partidas_presupuestos } = useGetPresupuestosPartidas();
   const partidas = partidas_presupuestos ? partidas_presupuestos : [];
 
@@ -44,6 +48,10 @@ export function RequisicionesPage() {
   );
 
   const mutationSendToCompras = useGenerarCompra();
+
+  const mutationRecepcionSinCargo = useRecepcionSinCargo();
+  const isPendingRecepcionSinCargo = mutationRecepcionSinCargo.isPending;
+
   const mutationDeleteRequisicion = useDeleteRequisicion();
 
   const handleSendToCompras = async (dto: SendToComprasDTO) => {
@@ -55,6 +63,21 @@ export function RequisicionesPage() {
     await toast.promise(mutationSendToCompras.mutateAsync(dto), {
       loading: "Enviando a módulo de compras...",
       success: "Requisición enviada a compras",
+      error: (err) => getApiErrorMessageAxios(err),
+    });
+  };
+
+  const handleRecepcionSinCargo = async (
+    dto: CreateCompraSinCargoFromRequisicionDto,
+  ) => {
+    if (!dto.requisicionID || !dto.userID) {
+      toast.warning("Faltan datos para el envío");
+      return;
+    }
+
+    await toast.promise(mutationRecepcionSinCargo.mutateAsync(dto), {
+      loading: "Recepcionando requisición sin gasto...",
+      success: "Requisición recepcionada a stock sin gasto",
       error: (err) => getApiErrorMessageAxios(err),
     });
   };
@@ -75,7 +98,10 @@ export function RequisicionesPage() {
   return (
     <div className="">
       <RequisitionsTable
+        userId={userId}
+        isPendingRecepcionSinCargo={isPendingRecepcionSinCargo}
         data={requisiciones}
+        handleRecepcionSinCargo={handleRecepcionSinCargo}
         isLoading={isLoadingRequisiciones}
         isError={isErrorRequisiciones}
         error={errorRequisiciones}

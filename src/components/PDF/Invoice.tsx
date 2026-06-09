@@ -5,15 +5,17 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import "dayjs/locale/es";
 import { User } from "lucide-react";
-
-import logo from "@/assets/NOVAPOSPNG.png";
 import type { VentaHistorialPDF } from "@/Types/PDF/VentaHistorialPDF";
 import { formatearMoneda } from "@/Pages/requisiciones/PDF/Pdf";
 import { useApiQuery } from "@/hooks/genericoCall/genericoCallHook";
 import { PageHeader } from "@/utils/components/PageHeaderPos";
 import { formattFecha } from "@/Pages/Utils/Utils";
+import { imageUrlToDataUrl, waitForImages } from "@/utils/imageToUrl";
+
+const logoUrl = import.meta.env.VITE_APP_LOGO;
 
 export default function Invoice() {
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const { id } = useParams();
   const facturaRef = useRef<HTMLDivElement>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -33,18 +35,61 @@ export default function Invoice() {
   );
 
   useEffect(() => {
-    if (!venta || !facturaRef.current) return;
+    let cancelled = false;
+
+    const loadLogo = async () => {
+      try {
+        if (!logoUrl) {
+          console.error("VITE_APP_LOGO no está configurado");
+          return;
+        }
+
+        console.log("Cargando logo desde:", logoUrl);
+
+        const dataUrl = await imageUrlToDataUrl(logoUrl);
+
+        if (!cancelled) {
+          setLogoDataUrl(dataUrl);
+        }
+      } catch (error) {
+        console.error("Error cargando logo:", error);
+
+        if (!cancelled) {
+          setLogoDataUrl(null);
+        }
+      }
+    };
+
+    loadLogo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!venta || !facturaRef.current || !logoDataUrl) return;
+
     let revoked = false;
 
     const generarPDF = async () => {
       try {
-        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        const element = facturaRef.current;
 
-        const canvas = await html2canvas(facturaRef.current as HTMLDivElement, {
-          scale: 1.5, // calidad decente sin disparar el peso
+        if (!element) return;
+
+        await waitForImages(element);
+
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => resolve(null));
+        });
+
+        const canvas = await html2canvas(element, {
+          scale: 1.5,
           useCORS: true,
+          allowTaint: false,
           backgroundColor: "#ffffff",
-          logging: false,
+          logging: true,
         });
 
         const imgData = canvas.toDataURL("image/png");
@@ -53,19 +98,23 @@ export default function Invoice() {
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
         pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+
         const blob = pdf.output("blob");
 
-        if (!revoked) setPdfUrl(URL.createObjectURL(blob));
+        if (!revoked) {
+          setPdfUrl(URL.createObjectURL(blob));
+        }
       } catch (error) {
         console.error("Error al generar PDF:", error);
       }
     };
 
     generarPDF();
+
     return () => {
       revoked = true;
     };
-  }, [venta]);
+  }, [venta, logoDataUrl]);
 
   useEffect(() => {
     return () => {
@@ -174,10 +223,9 @@ export default function Invoice() {
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <img
-                src={logo}
-                className="w-[5rem] h-[5rem]"
+                src={logoDataUrl ?? ""}
+                className="w-[5rem] h-[5rem] object-contain"
                 alt="Logo"
-                crossOrigin="anonymous"
               />
               <div>
                 <h1 className="text-base font-semibold leading-tight text-slate-800">

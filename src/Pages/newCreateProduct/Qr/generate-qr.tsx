@@ -1,6 +1,6 @@
 import { QRCodeCanvas } from "qrcode.react";
 import { useRef } from "react";
-import logo from "@/assets/NOVAPOSPNG.png";
+const logoUrl = import.meta.env.VITE_APP_LOGO;
 
 interface Props {
   valor: string;
@@ -10,7 +10,7 @@ interface Props {
 export const GeneradorQR = ({ valor, includeLogo = false }: Props) => {
   const qrRef = useRef<HTMLCanvasElement>(null);
 
-  const log: string = includeLogo ? logo : "";
+  const log: string = includeLogo ? logoUrl : "";
 
   const descargarQR = () => {
     const canvas = qrRef.current;

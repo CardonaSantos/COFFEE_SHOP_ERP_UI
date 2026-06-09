@@ -15,6 +15,8 @@ import {
   ShoppingCart,
   Pencil,
   Trash2,
+  PackageCheck,
+  Loader2,
 } from "lucide-react";
 import {
   getReqFlags,
@@ -22,31 +24,35 @@ import {
 } from "@/Types/requisiciones/requisiciones-tables";
 import { Link } from "react-router-dom";
 
-// ============================================================
-// Props
-// ============================================================
-
 interface RequisitionRowActionsProps {
   requisicion: RequisitionResponseDTO;
   onVerDetalle: (req: RequisitionResponseDTO) => void;
   onImprimir: (req: RequisitionResponseDTO) => void;
   onSendToCompras: (req: RequisitionResponseDTO) => void;
+  onRecepcionSinCargo: (req: RequisitionResponseDTO) => void;
   onDelete?: (req: RequisitionResponseDTO) => void;
-}
 
-// ============================================================
-// Component
-// ============================================================
+  isSendingToCompras?: boolean;
+  isPendingRecepcionSinCargo?: boolean;
+  isDeletingRequisicion?: boolean;
+}
 
 export function RequisitionRowActions({
   requisicion,
   onVerDetalle,
   onImprimir,
   onSendToCompras,
+  onRecepcionSinCargo,
   onDelete,
+  isSendingToCompras = false,
+  isPendingRecepcionSinCargo = false,
+  isDeletingRequisicion = false,
 }: RequisitionRowActionsProps) {
   const { canEdit, canSendToCompras, isEnviadaCompras } =
     getReqFlags(requisicion);
+
+  const isBusy =
+    isSendingToCompras || isPendingRecepcionSinCargo || isDeletingRequisicion;
 
   return (
     <DropdownMenu>
@@ -56,19 +62,22 @@ export function RequisitionRowActions({
           size="icon"
           className="h-7 w-7"
           aria-label="Abrir menú de acciones"
+          disabled={isBusy}
         >
-          <MoreVertical className="h-4 w-4" />
+          {isBusy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <MoreVertical className="h-4 w-4" />
+          )}
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-48">
-        {/* ── Ver detalle ─────────────────────────────────── */}
+      <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuItem onClick={() => onVerDetalle(requisicion)}>
           <Eye className="h-4 w-4 mr-2" />
           Ver detalle
         </DropdownMenuItem>
 
-        {/* ── Imprimir ────────────────────────────────────── */}
         <DropdownMenuItem onClick={() => onImprimir(requisicion)}>
           <Printer className="h-4 w-4 mr-2" />
           Imprimir
@@ -76,7 +85,6 @@ export function RequisitionRowActions({
 
         <DropdownMenuSeparator />
 
-        {/* ── Editar (navega a ruta dedicada) ─────────────── */}
         {canEdit ? (
           <DropdownMenuItem asChild>
             <Link to={`/requisicion-edit/${requisicion.id}`}>
@@ -91,23 +99,60 @@ export function RequisitionRowActions({
           </DropdownMenuItem>
         )}
 
-        {/* ── Enviar a compras ────────────────────────────── */}
         <DropdownMenuItem
-          disabled={!canSendToCompras || isEnviadaCompras}
-          onClick={() => canSendToCompras && onSendToCompras(requisicion)}
+          disabled={!canSendToCompras || isEnviadaCompras || isSendingToCompras}
+          onClick={() => {
+            if (!canSendToCompras || isEnviadaCompras || isSendingToCompras) {
+              return;
+            }
+
+            onSendToCompras(requisicion);
+          }}
         >
-          <ShoppingCart className="h-4 w-4 mr-2" />
+          {isSendingToCompras ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <ShoppingCart className="h-4 w-4 mr-2" />
+          )}
           {isEnviadaCompras ? "Ya en compras" : "Enviar a compras"}
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          disabled={
+            !canSendToCompras || isEnviadaCompras || isPendingRecepcionSinCargo
+          }
+          onClick={() => {
+            if (
+              !canSendToCompras ||
+              isEnviadaCompras ||
+              isPendingRecepcionSinCargo
+            ) {
+              return;
+            }
+
+            onRecepcionSinCargo(requisicion);
+          }}
+        >
+          {isPendingRecepcionSinCargo ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <PackageCheck className="h-4 w-4 mr-2" />
+          )}
+          Enviar sin gasto
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 
-        {/* ── Eliminar ────────────────────────────────────── */}
         <DropdownMenuItem
+          disabled={isDeletingRequisicion}
           className="text-destructive focus:text-destructive"
           onClick={() => onDelete?.(requisicion)}
         >
-          <Trash2 className="h-4 w-4 mr-2" />
+          {isDeletingRequisicion ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4 mr-2" />
+          )}
           Eliminar
         </DropdownMenuItem>
       </DropdownMenuContent>
