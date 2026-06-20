@@ -1,32 +1,32 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import {
-  useApiQuery,
-  useApiMutation,
-} from "@/hooks/genericoCall/genericoCallHook";
+import { QueryKey, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { PaginatedResponse } from "../tipos-presentaciones/Interfaces/tiposPresentaciones.interfaces";
 import {
+  useApiMutation,
+  useApiQuery,
+} from "@/hooks/genericoCall/genericoCallHook";
+import {
+  ExistingImage,
   ProductCreateDTO,
   ProductDetailDTO,
-  ExistingImage,
-  Categoria,
-  TipoPresentacion,
-  PresentationDetailDTO,
 } from "./interfaces/DomainProdPressTypes";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/components/Context/ContextSucursal";
-import { buildFormData, debugFormData } from "./builder";
-import { QueryKey, useQueryClient } from "@tanstack/react-query";
-import { validateBeforeSubmit } from "./helpers/validators";
 import { PageTransition } from "@/components/Transition/layout-transition";
-import { GeneradorQR } from "./Qr/generate-qr";
-import { Switch } from "@/components/ui/switch";
+import { buildFormData, debugFormData } from "./builder";
+import { validateBeforeSubmit } from "./helpers/validators";
 import { BasicInfoForm } from "./components/BasicInfoForm";
 import { DescriptionForm } from "./components/DescriptionForm";
 import { ImageUploader } from "./components/ImageUploader";
 import { PricesForm } from "./components/PricesForm";
+import { ProductCodesPanel } from "./code/ProductCodesPanel";
+import { useGetCategorias } from "@/hooks/use-categorias/use-categorias";
+import { useTiposPresentaciones } from "@/hooks/use-tipos-presentaciones/use-tipos-presentaciones";
+
+import { getApiErrorMessageAxios } from "../Utils/UtilsErrorApi";
+import { useDeleteProductImage } from "@/hooks/use-delete-images/use-delete-images";
 
 const initialProduct: ProductCreateDTO = {
   basicInfo: {
@@ -42,16 +42,13 @@ const initialProduct: ProductCreateDTO = {
   description: "",
   images: [],
   prices: [],
-  presentations: [],
 };
 
 export const QK = {
   CATEGORIES: ["categorias"] as const,
   PACKAGING_TYPES: ["empaques"] as const,
   PRODUCTS_LIST: ["products"] as const,
-  PRESENTATIONS_LIST: ["presentations"] as const,
   PRODUCT_DETAIL: (id: number) => ["product", id] as const,
-  PRESENTATION_DETAIL: (id: number) => ["presentation", id] as const,
 };
 
 const QUERY_OPTIONS = {
@@ -60,100 +57,112 @@ const QUERY_OPTIONS = {
   refetchOnReconnect: true as const,
 };
 
-export default function ProductEditorContainer({
-  mode = "product",
-}: {
-  mode?: "product" | "presentation";
-}) {
-  const userId = useStore((s) => s.userId) ?? 0;
+export default function ProductEditorContainer() {
+  const userId = useStore((state) => state.userId) ?? 0;
   const queryClient = useQueryClient();
-  const [includeLogo, setIncludeLogo] = useState<boolean>(false);
-  // Params / estado edición
-  const params = useParams<{ productId?: string; presentationId?: string }>();
-  const idParam = mode === "product" ? params.productId : params.presentationId;
-  const id = idParam ? Number(idParam) : undefined;
-  const isEditing = Boolean(id);
-
-  // Data
-  const { data: catsData } = useApiQuery<Categoria[]>(
-    QK.CATEGORIES,
-    "categoria",
-    undefined,
-    { ...QUERY_OPTIONS },
+  const [includeLogo, setIncludeLogo] = useState(false);
+  const [formState, setFormState] = useState<ProductCreateDTO>(initialProduct);
+  const [originalDetail, setOriginalDetail] = useState<ProductDetailDTO | null>(
+    null,
   );
+  const params = useParams<{ productId?: string }>();
+  const productId = params.productId ? Number(params.productId) : undefined;
+  const isEditing = Number.isFinite(productId) && Boolean(productId);
+  const { data: catsData = [] } = useGetCategorias();
+  const { data: packData } = useTiposPresentaciones();
 
-  const { data: packData } = useApiQuery<PaginatedResponse<TipoPresentacion>>(
-    QK.PACKAGING_TYPES,
-    "tipo-presentacion",
+  const deleteImage = useDeleteProductImage();
+
+  const removeImageFromState = (image: ExistingImage) => {
+    setFormState((prev) => ({
+      ...prev,
+      images: prev.images.filter((item) => {
+        const current = item as ExistingImage;
+
+        if (image.id && current.id) {
+          return current.id !== image.id;
+        }
+
+        return current.url !== image.url;
+      }),
+    }));
+  };
+
+  const handleDeleteExistingImage = async (image: ExistingImage) => {
+    if (!image.id) {
+      removeImageFromState(image);
+      return;
+    }
+
+    await toast.promise(deleteImage.mutateAsync(image.id), {
+      loading: "Eliminando imagen...",
+      success: "Imagen eliminada",
+      error: (error) => getApiErrorMessageAxios(error),
+    });
+
+    removeImageFromState(image);
+
+    if (productId) {
+      await queryClient.invalidateQueries({
+        queryKey: QK.PRODUCT_DETAIL(productId),
+      });
+    }
+  };
+
+  const { data: detailData } = useApiQuery<ProductDetailDTO>(
+    isEditing ? QK.PRODUCT_DETAIL(productId!) : ["_product_detail_disabled"],
+    `products/${productId ?? ""}`,
     undefined,
     {
       ...QUERY_OPTIONS,
+      enabled: isEditing,
     },
+  );
+
+  const mutation = useApiMutation<unknown, FormData>(
+    isEditing ? "patch" : "post",
+    isEditing ? `/products/${productId}` : "/products",
   );
 
   const categories = catsData ?? [];
   const packagingTypes = packData?.data ?? [];
 
-  // Detalle condicional
-  const detailKey: QueryKey | undefined = isEditing
-    ? mode === "product"
-      ? QK.PRODUCT_DETAIL(id!)
-      : QK.PRESENTATION_DETAIL(id!)
-    : undefined;
-
-  const detailUrl =
-    mode === "product" ? `products/${id ?? ""}` : `presentations/${id ?? ""}`;
-
-  const { data: detailData } = useApiQuery<
-    ProductDetailDTO | PresentationDetailDTO
-  >(detailKey ?? ["_detail_disabled"], detailUrl, undefined, {
-    ...QUERY_OPTIONS,
-    enabled: isEditing && !!id,
-  });
-
-  // Estado de formulario
-  const [formState, setFormState] = useState<ProductCreateDTO>(initialProduct);
-  const [originalDetail, setOriginalDetail] = useState<ProductDetailDTO | null>(
-    null,
-  );
-
-  // Un solo efecto para mapear y guardar original
   useEffect(() => {
     if (!detailData) return;
-    if (mode === "product") {
-      const mapped = mapProductDto(detailData as ProductDetailDTO);
-      setFormState(mapped);
-      setOriginalDetail(detailData as ProductDetailDTO);
-    } else {
-      const mapped = mapPresentationDto(detailData as PresentationDetailDTO);
-      setFormState(mapped);
-    }
-  }, [detailData, mode]);
 
-  // Update genérico
+    const mapped = mapProductDto(detailData);
+
+    setFormState(mapped);
+    setOriginalDetail(detailData);
+  }, [detailData]);
+
   const updateField = <K extends keyof ProductCreateDTO>(
     key: K,
     value: ProductCreateDTO[K],
-  ) => setFormState((prev) => ({ ...prev, [key]: value }));
+  ) => {
+    setFormState((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
-  // Mutación create/update
-  const submitBase = mode === "product" ? "/products" : "/presentations";
-  const mutation = useApiMutation<unknown, FormData>(
-    isEditing ? "patch" : "post",
-    isEditing ? `${submitBase}/${id}` : submitBase,
-  );
-
-  // Helper de invalidación centralizada
   const invalidate = async (keys: QueryKey[]) => {
-    for (const k of keys) {
-      await queryClient.invalidateQueries({ queryKey: k });
+    for (const key of keys) {
+      await queryClient.invalidateQueries({ queryKey: key });
     }
   };
 
   const handleSubmit = async () => {
-    const v = validateBeforeSubmit(formState, mode);
-    if (!v.ok) {
-      v.errors.forEach((msg) => toast.error(msg));
+    /**
+     * Si ya limpiaste el validator, usa:
+     * const validation = validateBeforeSubmit(formState);
+     *
+     * Si todavía espera segundo argumento, deja "product".
+     */
+    const validation = validateBeforeSubmit(formState, "product");
+
+    if (!validation.ok) {
+      validation.errors.forEach((message) => toast.error(message));
       return;
     }
 
@@ -163,121 +172,89 @@ export default function ProductEditorContainer({
     });
 
     try {
-      debugFormData(
-        formData,
-        isEditing
-          ? `${mode === "product" ? "PATCH /products" : "PATCH /presentations"}`
-          : `${mode === "product" ? "POST /products" : "POST /presentations"}`,
-      );
+      debugFormData(formData, `${isEditing ? "PATCH" : "POST"} /products`);
 
       await toast.promise(mutation.mutateAsync(formData), {
-        loading: isEditing
-          ? `Actualizando ${
-              mode === "product" ? "producto" : "presentación"
-            }...`
-          : `Creando ${mode === "product" ? "producto" : "presentación"}...`,
-        success: isEditing
-          ? `${mode === "product" ? "Producto" : "Presentación"} actualizado`
-          : `${mode === "product" ? "Producto" : "Presentación"} creado`,
-        error: (err) => getErrorMessage(err),
+        loading: isEditing ? "Actualizando producto..." : "Creando producto...",
+        success: isEditing ? "Producto actualizado" : "Producto creado",
+        error: (error) => getErrorMessage(error),
       });
 
-      // Invalidaciones post-mutate
-      const keysToInvalidate: QueryKey[] = [QK.CATEGORIES, QK.PACKAGING_TYPES];
+      const keysToInvalidate: QueryKey[] = [
+        QK.CATEGORIES,
+        QK.PACKAGING_TYPES,
+        QK.PRODUCTS_LIST,
+      ];
 
-      if (mode === "product") {
-        keysToInvalidate.push(QK.PRODUCTS_LIST);
-        if (isEditing && id) keysToInvalidate.push(QK.PRODUCT_DETAIL(id));
-      } else {
-        keysToInvalidate.push(QK.PRESENTATIONS_LIST);
-        if (isEditing && id) keysToInvalidate.push(QK.PRESENTATION_DETAIL(id));
+      if (isEditing && productId) {
+        keysToInvalidate.push(QK.PRODUCT_DETAIL(productId));
       }
 
       await invalidate(keysToInvalidate);
-    } catch {}
+    } catch {
+      // toast.promise ya muestra el error.
+    }
   };
+  console.log("El form: ", formState);
 
   return (
     <PageTransition
       fallbackBackTo="/"
       titleHeader="Creación y Edición de Producto"
     >
-      {mode === "product" && (
-        <div className="space-y-8">
-          {" "}
-          {/* SECCIÓN 1: Información Básica y QR */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <BasicInfoForm
-                value={formState.basicInfo}
-                categories={categories}
-                packagingTypes={packagingTypes}
-                onChange={(val) => updateField("basicInfo", val)}
-              />
-            </div>
-
-            {/* TARJETA DE CÓDIGO QR */}
-            <div className="flex flex-col p-6 border rounded-xl bg-card shadow-sm items-center justify-center space-y-4">
-              <div className="text-center">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  Código QR del Producto
-                </h3>
-                <p className="text-xs text-slate-400 mb-4">
-                  {formState.basicInfo.codigoProducto || "Sin código asignado"}
-                </p>
-              </div>
-
-              <div className="p-4 bg-white rounded-lg shadow-inner">
-                <GeneradorQR
-                  valor={formState.basicInfo.codigoProducto || "placeholder"}
-                  includeLogo={includeLogo}
-                />
-              </div>
-
-              <div className="flex items-center space-x-2 pt-2">
-                <Switch
-                  id="logo-qr"
-                  onCheckedChange={setIncludeLogo}
-                  checked={includeLogo}
-                />
-                <label htmlFor="logo-qr" className="text-sm cursor-pointer">
-                  Incluir mi logo
-                </label>
-              </div>
-            </div>
-          </div>
-          {/* SECCIÓN 2: Descripción y Multimedia */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <DescriptionForm
-              value={formState.description}
-              onChange={(val) => updateField("description", val)}
-            />
-            <ImageUploader
-              files={formState.images}
-              onDone={(files) => updateField("images", files)}
+      <div className="space-y-8">
+        {/* SECCIÓN 1: Información básica y códigos */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <BasicInfoForm
+              value={formState.basicInfo}
+              categories={categories}
+              packagingTypes={packagingTypes}
+              onChange={(value) => updateField("basicInfo", value)}
             />
           </div>
-          {/* SECCIÓN 3: Precios */}
-          <PricesForm
-            precios={formState.prices}
-            setPrecios={(prices) => updateField("prices", prices)}
+
+          <ProductCodesPanel
+            codigoProducto={formState.basicInfo.codigoProducto}
+            includeLogo={includeLogo}
+            onIncludeLogoChange={setIncludeLogo}
           />
         </div>
-      )}
 
-      {/* Footer de Acción */}
-      <div className="flex justify-end pt-4 border-t">
+        {/* SECCIÓN 2: Descripción y multimedia */}
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <DescriptionForm
+            value={formState.description}
+            onChange={(value) => updateField("description", value)}
+          />
+
+          <ImageUploader
+            files={formState.images}
+            onDone={(files) => updateField("images", files)}
+            onDeleteExisting={handleDeleteExistingImage}
+            isDeletingExisting={deleteImage.isPending}
+          />
+        </div>
+
+        {/* SECCIÓN 3: Precios */}
+        <PricesForm
+          precios={formState.prices}
+          setPrecios={(prices) => updateField("prices", prices)}
+        />
+      </div>
+
+      <div className="flex justify-end border-t pt-4">
         <Button
-          size={"sm"}
-          className=" disabled:bg-gray-400 "
+          size="sm"
+          className="disabled:bg-gray-400"
           onClick={handleSubmit}
           disabled={mutation.isPending}
         >
           {mutation.isPending
             ? "Procesando..."
             : isEditing
-              ? `Guardar Cambios`
-              : `Crear ${mode === "product" ? "Producto" : "Presentación"}`}
+              ? "Guardar Cambios"
+              : "Crear Producto"}
         </Button>
       </div>
     </PageTransition>
@@ -292,84 +269,20 @@ export function mapProductDto(dto: ProductDetailDTO): ProductCreateDTO {
       codigoProveedor: dto.codigoProveedor ?? "",
       stockMinimo: dto.stockMinimo ?? 0,
       precioCostoActual: Number(dto.precioCostoActual ?? 0),
-
       categorias: dto.categorias ?? [],
       tipoPresentacionId: dto.tipoPresentacionId ?? null,
       tipoPresentacion: dto.tipoPresentacion ?? null,
     },
     description: dto.descripcion ?? "",
     images: (dto.imagenesProducto ?? []) as ExistingImage[],
-    prices: (dto.precios ?? []).map((p) => ({
-      rol: p.rol,
-      orden: p.orden,
-      precio: String(p.precio),
-    })),
-    presentations: (dto.presentaciones ?? []).map((p) => ({
-      id: p.id,
-      nombre: p.nombre,
-      codigoBarras: p.codigoBarras ?? "",
-      tipoPresentacionId:
-        p.tipoPresentacionId ?? p.tipoPresentacion?.id ?? null,
-      tipoPresentacion: p.tipoPresentacion ?? null,
-      costoReferencialPresentacion: String(
-        p.costoReferencialPresentacion ?? "0",
-      ),
-      descripcion: p.descripcion ?? "",
-      stockMinimo: p.stockMinimo ?? 0,
-      precios: (p.precios ?? []).map((x) => ({
-        rol: x.rol,
-        orden: x.orden,
-        precio: String(x.precio),
-      })),
-      esDefault: !!p.esDefault,
-      imagenes: (p.imagenesPresentacion ?? []) as ExistingImage[],
-      activo: !!p.activo,
-      categorias: p.categorias ?? [],
+    prices: (dto.precios ?? []).map((precio) => ({
+      rol: precio.rol,
+      orden: precio.orden,
+      precio: String(precio.precio),
     })),
   };
 }
 
-export function mapPresentationDto(
-  dto: PresentationDetailDTO,
-): ProductCreateDTO {
-  return {
-    basicInfo: {
-      nombre: "",
-      codigoProducto: "",
-      codigoProveedor: "",
-      stockMinimo: 0,
-      precioCostoActual: 0,
-      categorias: [],
-      tipoPresentacionId: null,
-      tipoPresentacion: null,
-    },
-    description: "",
-    images: [],
-    prices: [],
-    presentations: [
-      {
-        id: dto.id,
-        nombre: dto.nombre,
-        codigoBarras: dto.codigoBarras ?? "",
-        tipoPresentacionId: dto.tipoPresentacionId,
-        tipoPresentacion: dto.tipoPresentacion,
-        costoReferencialPresentacion: dto.costoReferencialPresentacion,
-        descripcion: dto.descripcion ?? "",
-        stockMinimo: dto.stockMinimo ?? 0,
-        precios: dto.precios.map((x) => ({
-          rol: x.rol,
-          orden: x.orden,
-          precio: x.precio,
-        })),
-        esDefault: !!dto.esDefault,
-        imagenes: dto.imagenesPresentacion,
-        activo: dto.activo,
-        categorias: dto.categorias,
-      },
-    ],
-  };
-}
-
-function getErrorMessage(err: any): string {
-  return err?.message || "Error desconocido";
+function getErrorMessage(error: any): string {
+  return error?.message || "Error desconocido";
 }
