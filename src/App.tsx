@@ -243,17 +243,17 @@ function App() {
 
           <Route
             path="/crear-producto"
-            element={adminRoute(<ProductEditorContainer mode="product" />)}
+            element={adminRoute(<ProductEditorContainer />)}
           />
 
           <Route
             path="/editar-producto/:productId"
-            element={adminRoute(<ProductEditorContainer mode="product" />)}
+            element={adminRoute(<ProductEditorContainer />)}
           />
 
           <Route
             path="/editar-presentacion/:presentationId"
-            element={adminRoute(<ProductEditorContainer mode="presentation" />)}
+            element={adminRoute(<ProductEditorContainer />)}
           />
 
           <Route

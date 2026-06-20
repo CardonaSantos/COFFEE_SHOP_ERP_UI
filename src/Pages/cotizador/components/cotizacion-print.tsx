@@ -1,13 +1,45 @@
-import { forwardRef, useEffect, useState } from "react";
+"use client";
+
+import { forwardRef, useEffect, useMemo, useState } from "react";
 import { costoAdicional } from "../page";
 import { CartItem } from "@/Types/POS/interfaces";
 import { Sucursal } from "@/Types/Sucursal/Sucursal_Info";
 
 const logoUrl = import.meta.env.VITE_APP_LOGO;
 
+type FrecuenciaPago = "SEMANAL" | "QUINCENAL" | "MENSUAL";
+
+type CreditoPrintConfig = {
+  cuotas: number;
+  enganche: number;
+  tasaInteres: number;
+  gastosAdministrativos: number;
+  frecuenciaPago: FrecuenciaPago;
+  fechaPrimerPago: string;
+  incluirCostosEnCredito: boolean;
+  requiereAprobacion: boolean;
+};
+
+type CotizacionPrintConfig = {
+  numeroCotizacion: string;
+  fechaEmision: string;
+  fechaVencimiento: string;
+  validezDias: number;
+  tiempoEntrega: string;
+  garantia: string;
+  condiciones: string;
+  estado?: string;
+};
+
 interface Props {
   cart: CartItem[];
   cliente: string;
+  sucursal: Sucursal;
+
+  /**
+   * Props actuales que ya venían del cotizador viejo.
+   * Se mantienen para que el componente no rompa si todavía no actualizas la page.
+   */
   totalCarrito: number;
   totalDescuento: number;
   totalConDescuento: number;
@@ -17,7 +49,34 @@ interface Props {
   comentario: string;
   formatCurrency: (n: number) => string;
   costos_adicionales: Array<costoAdicional>;
-  sucursal: Sucursal;
+
+  /**
+   * Props nuevas opcionales para cotización formal.
+   */
+  cotizacion?: CotizacionPrintConfig;
+  credito?: CreditoPrintConfig;
+  metodoPago?: string;
+  tipoComprobante?: string | null;
+  vendedor?: string;
+
+  clienteTelefono?: string;
+  clienteDpi?: string;
+  clienteNit?: string;
+  clienteDireccion?: string;
+
+  subtotalProductos?: number;
+  subtotalConDescuento?: number;
+  totalCostosAdicionales?: number;
+  totalContado?: number;
+
+  baseFinanciable?: number;
+  saldoAntesInteres?: number;
+  totalInteres?: number;
+  totalFinanciado?: number;
+  pagoInicialTotal?: number;
+  totalCreditoEstimado?: number;
+
+  observaciones?: string;
 }
 
 async function imageUrlToDataUrl(url: string): Promise<string> {
@@ -47,11 +106,63 @@ async function imageUrlToDataUrl(url: string): Promise<string> {
   });
 }
 
+function toDateLabel(value?: string) {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("es-GT", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function addDaysISO(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function toISODate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+const frecuenciaLabel: Record<FrecuenciaPago, string> = {
+  SEMANAL: "Semanal",
+  QUINCENAL: "Quincenal",
+  MENSUAL: "Mensual",
+};
+
+const tableHeadCell: React.CSSProperties = {
+  padding: "7px 8px",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.4px",
+  border: "1px solid #d9efe6",
+};
+
+const tableCell: React.CSSProperties = {
+  padding: "6px 8px",
+  border: "1px solid #e8e8e8",
+  verticalAlign: "top",
+};
+
 const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
   const {
     cart,
     sucursal,
     cliente,
+    clienteTelefono,
+    clienteDpi,
+    clienteNit,
+    clienteDireccion,
+    vendedor,
+    metodoPago,
+    tipoComprobante,
+
     totalCarrito,
     totalDescuento,
     totalConDescuento,
@@ -61,6 +172,21 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
     comentario,
     formatCurrency,
     costos_adicionales,
+    cotizacion,
+    credito,
+
+    subtotalProductos,
+    subtotalConDescuento,
+    totalCostosAdicionales,
+    totalContado,
+
+    baseFinanciable,
+    saldoAntesInteres,
+    totalInteres,
+    totalFinanciado,
+    pagoInicialTotal,
+    totalCreditoEstimado,
+    observaciones,
   } = props;
 
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
@@ -93,12 +219,111 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
     };
   }, []);
 
-  const today = new Date();
-  const fechaStr = today.toLocaleDateString("es-GT");
+  const totals = useMemo(() => {
+    const additional = Number.isFinite(totalCostosAdicionales)
+      ? Number(totalCostosAdicionales)
+      : costos_adicionales.reduce(
+          (acc, costo) => acc + (Number(costo.costo) || 0),
+          0,
+        );
 
-  const ROJO = "#F5F5F5";
+    const productsSubtotal = Number.isFinite(subtotalProductos)
+      ? Number(subtotalProductos)
+      : Number(totalCarrito) || 0;
+
+    const discountedSubtotal = Number.isFinite(subtotalConDescuento)
+      ? Number(subtotalConDescuento)
+      : Number(totalConDescuento) || 0;
+
+    const contado = Number.isFinite(totalContado)
+      ? Number(totalContado)
+      : discountedSubtotal + additional;
+
+    return {
+      additional,
+      productsSubtotal,
+      discountedSubtotal,
+      contado,
+    };
+  }, [
+    costos_adicionales,
+    subtotalProductos,
+    subtotalConDescuento,
+    totalCarrito,
+    totalConDescuento,
+    totalCostosAdicionales,
+    totalContado,
+  ]);
+
+  const today = new Date();
+  const fallbackFechaEmision = toISODate(today);
+  const fallbackValidezDias = 7;
+  const fallbackFechaVencimiento = addDaysISO(fallbackValidezDias);
+
+  const numeroCotizacion = cotizacion?.numeroCotizacion ?? `COT-${Date.now()}`;
+  const fechaEmision = cotizacion?.fechaEmision ?? fallbackFechaEmision;
+  const fechaVencimiento =
+    cotizacion?.fechaVencimiento ?? fallbackFechaVencimiento;
+  const validezDias = cotizacion?.validezDias ?? fallbackValidezDias;
+  const tiempoEntrega =
+    cotizacion?.tiempoEntrega ?? "Entrega inmediata salvo falta de stock.";
+  const garantia =
+    cotizacion?.garantia ?? "Garantía según políticas de la empresa.";
+  const condiciones =
+    cotizacion?.condiciones ??
+    "Cotización sujeta a disponibilidad de inventario. Precios válidos únicamente durante el período indicado.";
+  const estado = cotizacion?.estado ?? "GENERADA";
+
+  const isCredit = Boolean(
+    credito || cuotas > 0 || metodoPago?.toUpperCase?.().includes("CREDITO"),
+  );
+
+  const creditoResolved: CreditoPrintConfig = {
+    cuotas: credito?.cuotas ?? cuotas ?? 0,
+    enganche: credito?.enganche ?? enganche ?? 0,
+    tasaInteres: credito?.tasaInteres ?? 0,
+    gastosAdministrativos: credito?.gastosAdministrativos ?? 0,
+    frecuenciaPago: credito?.frecuenciaPago ?? "MENSUAL",
+    fechaPrimerPago: credito?.fechaPrimerPago ?? "",
+    incluirCostosEnCredito: credito?.incluirCostosEnCredito ?? true,
+    requiereAprobacion: credito?.requiereAprobacion ?? true,
+  };
+
+  const printSaldoAntesInteres =
+    saldoAntesInteres ??
+    Math.max(
+      (baseFinanciable ?? totals.discountedSubtotal) -
+        creditoResolved.enganche +
+        creditoResolved.gastosAdministrativos,
+      0,
+    );
+
+  const printTotalInteres =
+    totalInteres ??
+    printSaldoAntesInteres * ((creditoResolved.tasaInteres || 0) / 100);
+
+  const printTotalFinanciado =
+    totalFinanciado ?? printSaldoAntesInteres + printTotalInteres;
+
+  const printCantidadPorCuota =
+    cantidadPorCuota ||
+    (creditoResolved.cuotas > 0
+      ? printTotalFinanciado / creditoResolved.cuotas
+      : 0);
+
+  const printPagoInicial =
+    pagoInicialTotal ?? creditoResolved.enganche ?? enganche ?? 0;
+
+  const printTotalCreditoEstimado =
+    totalCreditoEstimado ?? printPagoInicial + printTotalFinanciado;
+
   const VERDE = "#2DBE8D";
   const VERDE2 = "#7ED8B8";
+  const VERDE_SUAVE = "#eefaf6";
+  const GRIS = "#555";
+  const GRIS_CLARO = "#f6f7f8";
+  const BORDE = "#dfe7e4";
+  const ROJO = "#b42318";
 
   return (
     <div
@@ -107,39 +332,42 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         WebkitPrintColorAdjust: "exact",
         printColorAdjust: "exact",
         fontFamily: "Arial, sans-serif",
-        fontSize: "12px",
+        fontSize: "11px",
         color: "#111",
         backgroundColor: "#fff",
-        padding: "32px",
-        maxWidth: "780px",
+        padding: "28px",
+        maxWidth: "820px",
         margin: "0 auto",
       }}
     >
       <div
         style={{
-          height: "10px",
+          height: "8px",
           backgroundColor: VERDE2,
-          marginBottom: "20px",
+          marginBottom: "18px",
           borderRadius: "2px",
         }}
       />
 
+      {/* HEADER */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: "24px",
+          display: "grid",
+          gridTemplateColumns: "1fr 170px",
+          gap: "16px",
+          alignItems: "start",
+          marginBottom: "18px",
         }}
       >
         <div>
           <h1
             style={{
-              fontSize: "25px",
-              fontWeight: 800,
+              fontSize: "24px",
+              fontWeight: 900,
               color: VERDE,
               margin: 0,
               lineHeight: 1.1,
+              textTransform: "uppercase",
             }}
           >
             {sucursal.nombre ?? "N/A"}
@@ -148,229 +376,311 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
           <p
             style={{
               margin: "6px 0 0",
-              color: "#555",
-              fontSize: "11px",
-              lineHeight: 1.6,
+              color: GRIS,
+              fontSize: "10.5px",
+              lineHeight: 1.5,
             }}
           >
             {sucursal.direccion ?? "N/A"}
             <br />
-            Contacto: {sucursal.telefono ?? "N/A"} &nbsp; PBX: {sucursal.pbx}
+            Contacto: {sucursal.telefono ?? "N/A"}
+            {sucursal.pbx ? ` · PBX: ${sucursal.pbx}` : ""}
           </p>
         </div>
 
-        {logoDataUrl && (
-          <img
-            src={logoDataUrl}
-            alt="Logo Nova Sistemas"
+        <div style={{ textAlign: "right" }}>
+          {logoDataUrl && (
+            <img
+              src={logoDataUrl}
+              alt="Logo"
+              style={{
+                height: "58px",
+                width: "auto",
+                objectFit: "contain",
+                marginBottom: "8px",
+              }}
+            />
+          )}
+
+          <div
             style={{
-              height: "72px",
-              width: "auto",
-              objectFit: "contain",
+              border: `1px solid ${BORDE}`,
+              borderRadius: "6px",
+              overflow: "hidden",
+              textAlign: "left",
             }}
-          />
-        )}
+          >
+            <div
+              style={{
+                backgroundColor: VERDE,
+                color: "#fff",
+                padding: "6px 8px",
+                fontWeight: 800,
+                fontSize: "12px",
+                textTransform: "uppercase",
+              }}
+            >
+              Cotización
+            </div>
+
+            <div style={{ padding: "7px 8px", fontSize: "10.5px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: GRIS }}>No.</span>
+                <strong>{numeroCotizacion}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: GRIS }}>Estado</span>
+                <strong>{estado}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div style={{ marginBottom: "16px" }}>
-        <h2
-          style={{
-            fontSize: "18px",
-            fontWeight: 900,
-            color: VERDE,
-            textTransform: "uppercase",
-            letterSpacing: "1px",
-            borderBottom: `2px solid ${VERDE}`,
-            paddingBottom: "4px",
-            display: "inline-block",
-            margin: 0,
-          }}
-        >
-          Detalle de Cotización
-        </h2>
-
-        {cliente && (
-          <p style={{ margin: "6px 0 0", fontSize: "11px", color: "#555" }}>
-            Cliente: <strong>{cliente}</strong>
-          </p>
-        )}
-      </div>
-
+      {/* GENERAL INFO */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: "8px",
-          marginBottom: "24px",
+          gridTemplateColumns: "1.2fr 1fr",
+          gap: "10px",
+          marginBottom: "14px",
         }}
       >
-        {[{ label: "FECHA:", value: fechaStr }].map(({ label, value }) => (
-          <div key={label}>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: "11px" }}>
-              {label}
-            </p>
-
-            <p
-              style={{
-                margin: 0,
-                color: ROJO,
-                fontWeight: 700,
-                fontSize: "13px",
-              }}
-            >
-              {value}
-            </p>
+        <div
+          style={{
+            border: `1px solid ${BORDE}`,
+            borderRadius: "6px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: VERDE_SUAVE,
+              padding: "6px 8px",
+              fontWeight: 800,
+              color: VERDE,
+              textTransform: "uppercase",
+            }}
+          >
+            Cliente
           </div>
-        ))}
+
+          <div style={{ padding: "8px", lineHeight: 1.55 }}>
+            <div>
+              <span style={{ color: GRIS }}>Nombre: </span>
+              <strong>{cliente || "Consumidor final"}</strong>
+            </div>
+
+            {(clienteTelefono ||
+              clienteDpi ||
+              clienteNit ||
+              clienteDireccion) && (
+              <>
+                {clienteTelefono && (
+                  <div>
+                    <span style={{ color: GRIS }}>Teléfono: </span>
+                    {clienteTelefono}
+                  </div>
+                )}
+                {clienteDpi && (
+                  <div>
+                    <span style={{ color: GRIS }}>DPI: </span>
+                    {clienteDpi}
+                  </div>
+                )}
+                {clienteNit && (
+                  <div>
+                    <span style={{ color: GRIS }}>NIT: </span>
+                    {clienteNit}
+                  </div>
+                )}
+                {clienteDireccion && (
+                  <div>
+                    <span style={{ color: GRIS }}>Dirección: </span>
+                    {clienteDireccion}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: `1px solid ${BORDE}`,
+            borderRadius: "6px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: VERDE_SUAVE,
+              padding: "6px 8px",
+              fontWeight: 800,
+              color: VERDE,
+              textTransform: "uppercase",
+            }}
+          >
+            Datos de cotización
+          </div>
+
+          <div style={{ padding: "8px", lineHeight: 1.55 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: GRIS }}>Emisión</span>
+              <strong>{toDateLabel(fechaEmision)}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: GRIS }}>Vence</span>
+              <strong>{toDateLabel(fechaVencimiento)}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: GRIS }}>Validez</span>
+              <strong>{validezDias} día(s)</strong>
+            </div>
+            {vendedor && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: GRIS }}>Vendedor</span>
+                <strong>{vendedor}</strong>
+              </div>
+            )}
+            {metodoPago && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: GRIS }}>Método</span>
+                <strong>{metodoPago}</strong>
+              </div>
+            )}
+            {tipoComprobante && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: GRIS }}>Comprobante</span>
+                <strong>{tipoComprobante}</strong>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
+      {/* ITEMS */}
       <table
         style={{
           width: "100%",
           borderCollapse: "collapse",
-          marginBottom: "16px",
-          fontSize: "11px",
+          marginBottom: "12px",
+          fontSize: "10.5px",
         }}
       >
         <thead>
           <tr style={{ backgroundColor: VERDE, color: "#fff" }}>
-            <th
-              style={{
-                padding: "7px 8px",
-                textAlign: "left",
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-              }}
-            >
-              Producto
+            <th style={{ ...tableHeadCell, textAlign: "left" }}>Producto</th>
+            <th style={{ ...tableHeadCell, textAlign: "center", width: 46 }}>
+              Cant.
             </th>
-
-            <th
-              style={{
-                padding: "7px 8px",
-                textAlign: "right",
-                fontWeight: 700,
-                textTransform: "uppercase",
-              }}
-            >
+            <th style={{ ...tableHeadCell, textAlign: "right", width: 90 }}>
               Precio
             </th>
-
-            <th
-              style={{
-                padding: "7px 8px",
-                textAlign: "right",
-                fontWeight: 700,
-                textTransform: "uppercase",
-              }}
-            >
-              Cantidad
-            </th>
-
-            <th
-              style={{
-                padding: "7px 8px",
-                textAlign: "right",
-                fontWeight: 700,
-                textTransform: "uppercase",
-              }}
-            >
+            <th style={{ ...tableHeadCell, textAlign: "right", width: 96 }}>
               Total
             </th>
           </tr>
         </thead>
 
         <tbody>
-          {cart.map((item, i) => (
-            <tr
-              key={item.uid}
-              style={{ backgroundColor: i % 2 === 0 ? "#f4f9f6" : "#fff" }}
-            >
-              <td style={{ padding: "6px 8px" }}>{item.nombre}</td>
+          {cart.map((item, index) => {
+            const lineTotal =
+              Number(item.selectedPrice || 0) * Number(item.quantity || 1);
 
-              <td style={{ padding: "6px 8px", textAlign: "right" }}>
-                {formatCurrency(item.selectedPrice)}
-              </td>
+            return (
+              <tr
+                key={item.uid}
+                style={{
+                  backgroundColor: index % 2 === 0 ? "#f8fbfa" : "#fff",
+                }}
+              >
+                <td style={tableCell}>
+                  <strong>{item.nombre}</strong>
+                  {item.selectedPriceRole && (
+                    <div style={{ color: GRIS, fontSize: "9.5px" }}>
+                      Precio: {String(item.selectedPriceRole)}
+                    </div>
+                  )}
+                </td>
 
-              <td style={{ padding: "6px 8px", textAlign: "right" }}>
-                {item.quantity}
-              </td>
+                <td style={{ ...tableCell, textAlign: "center" }}>
+                  {item.quantity}
+                </td>
 
-              <td style={{ padding: "6px 8px", textAlign: "right" }}>
-                {formatCurrency(item.selectedPrice * item.quantity)}
-              </td>
-            </tr>
-          ))}
+                <td style={{ ...tableCell, textAlign: "right" }}>
+                  {formatCurrency(Number(item.selectedPrice || 0))}
+                </td>
+
+                <td
+                  style={{ ...tableCell, textAlign: "right", fontWeight: 700 }}
+                >
+                  {formatCurrency(lineTotal)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
+      {/* ADDITIONAL COSTS */}
       {costos_adicionales.length > 0 && (
         <table
           style={{
             width: "100%",
             borderCollapse: "collapse",
-            marginBottom: "16px",
-            fontSize: "11px",
+            marginBottom: "12px",
+            fontSize: "10.5px",
           }}
         >
           <thead>
-            <tr style={{ backgroundColor: VERDE2, color: "#fff" }}>
-              <th
-                style={{
-                  padding: "7px 8px",
-                  textAlign: "left",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                }}
-              >
-                Otros
+            <tr style={{ backgroundColor: VERDE2, color: "#111" }}>
+              <th style={{ ...tableHeadCell, textAlign: "left" }}>
+                Costos adicionales
               </th>
-
-              <th
-                style={{
-                  padding: "7px 8px",
-                  textAlign: "right",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                }}
-              >
-                Monto
-              </th>
-
-              <th
-                style={{
-                  padding: "7px 8px",
-                  textAlign: "right",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                }}
-              >
+              <th style={{ ...tableHeadCell, textAlign: "left" }}>
                 Descripción
+              </th>
+              <th style={{ ...tableHeadCell, textAlign: "center", width: 85 }}>
+                Condición
+              </th>
+              <th style={{ ...tableHeadCell, textAlign: "right", width: 90 }}>
+                Monto
               </th>
             </tr>
           </thead>
 
           <tbody>
-            {costos_adicionales.map((item, i) => (
+            {costos_adicionales.map((item, index) => (
               <tr
                 key={item.id}
-                style={{ backgroundColor: i % 2 === 0 ? "#f4f9f6" : "#fff" }}
+                style={{
+                  backgroundColor: index % 2 === 0 ? "#f8fbfa" : "#fff",
+                }}
               >
-                <td style={{ padding: "6px 8px" }}>{item.nombre_costo}</td>
+                <td style={tableCell}>
+                  <strong>{item.nombre_costo}</strong>
+                </td>
 
-                <td style={{ padding: "6px 8px", textAlign: "right" }}>
-                  {formatCurrency(item.costo)}
+                <td style={{ ...tableCell, color: GRIS }}>
+                  {item.descripcion || "—"}
                 </td>
 
                 <td
                   style={{
-                    padding: "6px 8px",
-                    textAlign: "right",
-                    color: "#555",
+                    ...tableCell,
+                    textAlign: "center",
+                    fontSize: "9.5px",
                   }}
                 >
-                  {item.descripcion}
+                  {item.obligatorio ? "Obligatorio" : "Opcional"}
+                  {item.financiable ? " · Financiable" : ""}
+                </td>
+
+                <td
+                  style={{ ...tableCell, textAlign: "right", fontWeight: 700 }}
+                >
+                  {formatCurrency(Number(item.costo || 0))}
                 </td>
               </tr>
             ))}
@@ -378,130 +688,275 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         </table>
       )}
 
+      {/* TOTALS + NOTES */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          marginTop: "8px",
+          display: "grid",
+          gridTemplateColumns: isCredit ? "1fr 1fr" : "1fr 260px",
+          gap: "12px",
+          alignItems: "start",
+          marginTop: "10px",
         }}
       >
-        <div style={{ fontSize: "11px", color: "#555", maxWidth: "55%" }}>
-          {comentario && (
-            <>
-              <p style={{ fontWeight: 700, margin: "0 0 2px" }}>Notas:</p>
-              <p style={{ margin: 0 }}>{comentario}</p>
-            </>
-          )}
-        </div>
-
-        <div style={{ minWidth: "220px", fontSize: "11px" }}>
+        <div style={{ display: "grid", gap: "8px" }}>
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "3px 0",
-              borderBottom: "1px solid #e0e0e0",
+              border: `1px solid ${BORDE}`,
+              borderRadius: "6px",
+              overflow: "hidden",
             }}
           >
-            <span style={{ color: "#555" }}>Subtotal</span>
-            <span>{formatCurrency(totalCarrito)}</span>
-          </div>
-
-          {totalDescuento > 0 && (
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                padding: "3px 0",
-                borderBottom: "1px solid #e0e0e0",
-                color: ROJO,
-              }}
-            >
-              <span>Descuento</span>
-              <span>- {formatCurrency(totalDescuento)}</span>
-            </div>
-          )}
-
-          {costos_adicionales.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                padding: "3px 0",
-                borderBottom: "1px solid #e0e0e0",
-              }}
-            >
-              <span style={{ color: "#555" }}>Costos adicionales</span>
-              <span>
-                {formatCurrency(
-                  costos_adicionales.reduce(
-                    (acc, costo) => acc + costo.costo,
-                    0,
-                  ),
-                )}
-              </span>
-            </div>
-          )}
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              padding: "6px 0 2px",
-              marginTop: "4px",
-              borderTop: `2px solid ${VERDE}`,
-            }}
-          >
-            <span
-              style={{
-                fontWeight: 900,
-                fontSize: "15px",
-                color: ROJO,
+                backgroundColor: VERDE_SUAVE,
+                padding: "6px 8px",
+                fontWeight: 800,
+                color: VERDE,
                 textTransform: "uppercase",
               }}
             >
-              Total
-            </span>
+              Condiciones comerciales
+            </div>
 
-            <span style={{ fontWeight: 900, fontSize: "15px", color: ROJO }}>
-              {formatCurrency(
-                totalConDescuento +
-                  costos_adicionales.reduce(
-                    (acc, costo) => acc + costo.costo,
-                    0,
-                  ),
-              )}
-            </span>
+            <div
+              style={{ padding: "8px", fontSize: "10.5px", lineHeight: 1.55 }}
+            >
+              <div>
+                <strong>Entrega:</strong> {tiempoEntrega}
+              </div>
+              <div>
+                <strong>Garantía:</strong> {garantia}
+              </div>
+              <div>
+                <strong>Condiciones:</strong> {condiciones}
+              </div>
+            </div>
           </div>
 
-          {cuotas > 0 && (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "3px 0",
-                  color: "#555",
-                }}
-              >
-                <span>Enganche</span>
-                <span>{formatCurrency(enganche)}</span>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "3px 0",
-                  color: "#555",
-                }}
-              >
-                <span>{cuotas} cuotas de</span>
-                <span>{formatCurrency(cantidadPorCuota)}</span>
-              </div>
-            </>
+          {(comentario || observaciones) && (
+            <div
+              style={{
+                border: `1px solid ${BORDE}`,
+                borderRadius: "6px",
+                padding: "8px",
+                fontSize: "10.5px",
+                color: GRIS,
+                lineHeight: 1.55,
+              }}
+            >
+              <strong style={{ color: "#111" }}>Notas:</strong>
+              <br />
+              {comentario || observaciones}
+            </div>
           )}
+        </div>
+
+        <div
+          style={{
+            border: `1px solid ${BORDE}`,
+            borderRadius: "6px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: VERDE,
+              color: "#fff",
+              padding: "6px 8px",
+              fontWeight: 800,
+              textTransform: "uppercase",
+            }}
+          >
+            Resumen
+          </div>
+
+          <div style={{ padding: "8px", fontSize: "10.5px" }}>
+            <SummaryRow
+              label="Subtotal productos"
+              value={formatCurrency(totals.productsSubtotal)}
+            />
+
+            {totalDescuento > 0 && (
+              <SummaryRow
+                label="Descuento"
+                value={`- ${formatCurrency(totalDescuento)}`}
+                color={ROJO}
+              />
+            )}
+
+            <SummaryRow
+              label="Subtotal con descuento"
+              value={formatCurrency(totals.discountedSubtotal)}
+            />
+
+            {totals.additional > 0 && (
+              <SummaryRow
+                label="Costos adicionales"
+                value={formatCurrency(totals.additional)}
+              />
+            )}
+
+            <div
+              style={{
+                marginTop: "6px",
+                paddingTop: "6px",
+                borderTop: `2px solid ${VERDE}`,
+              }}
+            >
+              <SummaryRow
+                label="Total contado"
+                value={formatCurrency(totals.contado)}
+                strong
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CREDIT BLOCK */}
+      {isCredit && (
+        <div
+          style={{
+            marginTop: "12px",
+            border: `1px solid ${BORDE}`,
+            borderRadius: "6px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#183b32",
+              color: "#fff",
+              padding: "7px 8px",
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: "0.4px",
+            }}
+          >
+            Condiciones de crédito
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: "8px",
+              padding: "9px 10px",
+              fontSize: "10.5px",
+              backgroundColor: GRIS_CLARO,
+            }}
+          >
+            <CreditInfo
+              label="Frecuencia"
+              value={frecuenciaLabel[creditoResolved.frecuenciaPago]}
+            />
+            <CreditInfo
+              label="Primer pago"
+              value={
+                creditoResolved.fechaPrimerPago
+                  ? toDateLabel(creditoResolved.fechaPrimerPago)
+                  : "Por definir"
+              }
+            />
+            <CreditInfo
+              label="Aprobación"
+              value={
+                creditoResolved.requiereAprobacion
+                  ? "Sujeto a aprobación"
+                  : "No indicada"
+              }
+            />
+          </div>
+
+          <div style={{ padding: "8px 10px", fontSize: "10.5px" }}>
+            <SummaryRow
+              label="Base financiable"
+              value={formatCurrency(
+                baseFinanciable ?? totals.discountedSubtotal,
+              )}
+            />
+            <SummaryRow
+              label="Enganche"
+              value={formatCurrency(creditoResolved.enganche)}
+            />
+            <SummaryRow
+              label="Gastos administrativos"
+              value={formatCurrency(creditoResolved.gastosAdministrativos)}
+            />
+            <SummaryRow
+              label="Saldo antes de recargo"
+              value={formatCurrency(printSaldoAntesInteres)}
+            />
+            <SummaryRow
+              label={`Recargo / interés (${creditoResolved.tasaInteres}%)`}
+              value={formatCurrency(printTotalInteres)}
+            />
+
+            <div
+              style={{
+                marginTop: "6px",
+                paddingTop: "6px",
+                borderTop: `2px solid ${VERDE}`,
+              }}
+            >
+              <SummaryRow
+                label="Pago inicial estimado"
+                value={formatCurrency(printPagoInicial)}
+                strong
+              />
+              <SummaryRow
+                label="Total financiado"
+                value={formatCurrency(printTotalFinanciado)}
+                strong
+              />
+              <SummaryRow
+                label={`${creditoResolved.cuotas} cuota(s) ${frecuenciaLabel[
+                  creditoResolved.frecuenciaPago
+                ].toLowerCase()} de`}
+                value={formatCurrency(printCantidadPorCuota)}
+                strong
+              />
+              <SummaryRow
+                label="Total estimado crédito"
+                value={formatCurrency(printTotalCreditoEstimado)}
+                strong
+              />
+            </div>
+
+            {creditoResolved.requiereAprobacion && (
+              <p
+                style={{
+                  margin: "8px 0 0",
+                  color: ROJO,
+                  fontSize: "10px",
+                  lineHeight: 1.45,
+                }}
+              >
+                * Esta cotización de crédito está sujeta a verificación,
+                disponibilidad, revisión de datos del cliente y aprobación
+                interna.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "24px",
+          marginTop: "32px",
+          fontSize: "10px",
+          color: GRIS,
+        }}
+      >
+        <div style={{ borderTop: "1px solid #999", paddingTop: "6px" }}>
+          Firma vendedor
+        </div>
+
+        <div style={{ borderTop: "1px solid #999", paddingTop: "6px" }}>
+          Firma cliente
         </div>
       </div>
 
@@ -509,13 +964,63 @@ const CotizacionPrint = forwardRef<HTMLDivElement, Props>((props, ref) => {
         style={{
           height: "6px",
           backgroundColor: VERDE2,
-          marginTop: "28px",
+          marginTop: "24px",
           borderRadius: "2px",
         }}
       />
     </div>
   );
 });
+
+function SummaryRow({
+  label,
+  value,
+  color,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  strong?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: "12px",
+        padding: strong ? "4px 0" : "3px 0",
+        borderBottom: strong ? "none" : "1px solid #ececec",
+        color: color ?? "#111",
+      }}
+    >
+      <span style={{ color: color ?? "#555", fontWeight: strong ? 800 : 400 }}>
+        {label}
+      </span>
+      <span style={{ fontWeight: strong ? 900 : 700, textAlign: "right" }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function CreditInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        style={{
+          color: "#555",
+          fontSize: "9.5px",
+          textTransform: "uppercase",
+          letterSpacing: "0.3px",
+        }}
+      >
+        {label}
+      </div>
+      <strong>{value}</strong>
+    </div>
+  );
+}
 
 CotizacionPrint.displayName = "CotizacionPrint";
 

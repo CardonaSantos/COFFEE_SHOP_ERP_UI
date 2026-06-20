@@ -11,6 +11,9 @@ import ProductImagesCropper from "@/utils/components/Image/ProductImagesCropper"
 interface Props {
   files: UIMedia[]; // <- ahora acepta ambos
   onDone: (files: UIMedia[]) => void; // <- devuelve mezcla (Files + Existing)
+
+  onDeleteExisting?: (image: ExistingImage) => Promise<void> | void;
+  isDeletingExisting?: boolean;
 }
 
 // Type guards
@@ -21,8 +24,8 @@ const isExisting = (x: UIMedia): x is ExistingImage =>
 export function ImageUploader({
   files,
   onDone,
-  // ProductImagesCropper,
-  // CroppedGrid,
+  isDeletingExisting,
+  onDeleteExisting,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,7 +65,16 @@ export function ImageUploader({
     setRawFiles([]);
   };
 
-  const removeExistingAt = (idx: number) => {
+  const removeExistingAt = async (idx: number) => {
+    const image = existing[idx];
+
+    if (!image) return;
+
+    if (image.id) {
+      await onDeleteExisting?.(image);
+      return;
+    }
+
     const nextExisting = existing.filter((_, i) => i !== idx);
     onDone([...nextExisting, ...croppedFiles]);
   };
@@ -146,6 +158,7 @@ export function ImageUploader({
                   type="button"
                   className="absolute top-1 right-1 bg-background/80 hover:bg-background p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={() => removeExistingAt(idx)}
+                  disabled={isDeletingExisting}
                   aria-label="Quitar imagen"
                 >
                   <X className="h-3 w-3" />

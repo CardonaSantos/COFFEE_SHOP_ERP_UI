@@ -6,6 +6,8 @@ export const erpEndpoints = {
   productos: {
     solicitar: "/solicitud-transferencia-producto",
 
+    delete_image: (key: number) => `/products/images/${key}`,
+
     inventary: "products/products/for-inventary",
 
     get_to_transfer: (sucursalId: number) =>

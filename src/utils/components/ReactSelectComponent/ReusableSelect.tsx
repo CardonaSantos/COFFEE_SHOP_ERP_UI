@@ -86,7 +86,6 @@ function ReusableSelectInner<T>(
     }
   };
 
-  // 🔴 IMPORTANTE: ramificar para preservar los literales y tipos del ref
   if ("isMulti" in props && props.isMulti) {
     return (
       <Select<OptionOf<T>, true>

@@ -78,7 +78,6 @@ export interface ProductFormDTO {
   description: string;
   images: UIMedia[];
   prices: PrecioProducto[];
-  presentations: Presentacion[];
 }
 
 // Alias para mantener compatibilidad con tu código actual
@@ -108,24 +107,6 @@ export interface ProductDetailDTO {
   imagenesProducto: ExistingImage[];
 
   precios: Array<{ rol: RolPrecio; orden: number; precio: DecimalString }>;
-
-  presentaciones: Array<{
-    id: ID;
-    nombre: string;
-    codigoBarras?: string | null;
-    tipoPresentacionId?: ID | null;
-    tipoPresentacion?: TipoPresentacion | null;
-    costoReferencialPresentacion?: DecimalString | null;
-    descripcion?: string | null;
-    stockMinimo?: number | null;
-    precios: Array<{ rol: RolPrecio; orden: number; precio: DecimalString }>;
-    imagenesPresentacion: ExistingImage[];
-    esDefault: boolean;
-    activo: boolean;
-
-    // ⇨ FALTABA: categorías por presentación (tu mapper lo usa)
-    categorias: Categoria[];
-  }>;
 }
 
 // ===== Payloads para crear/actualizar en API =====
