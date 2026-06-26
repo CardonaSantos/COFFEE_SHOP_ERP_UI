@@ -42,7 +42,7 @@ const EstadoGarantiaConstants = {
   EN_REPARACION: "EN_REPARACION",
   REPARADO: "REPARADO",
   REEMPLAZADO: "REEMPLAZADO",
-  ENTREGADO_CLIENTE: "ENTREGADO_CLIENTE",
+  CERRADO: "CERRADO",
 } as const;
 
 export function UpdateWarrantyDialog({
