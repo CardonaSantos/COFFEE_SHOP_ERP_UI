@@ -114,6 +114,9 @@ export const erpEndpoints = {
   },
   excel: {
     cajas: `/excel-reports/cajas`,
+
+    cajas_report_range: `/excel-reports/reports-by-range`,
+
     libro_diario: `/excel-reports/libro-diario`,
 
     libro_mayor: `/excel-reports/libro-mayor`,

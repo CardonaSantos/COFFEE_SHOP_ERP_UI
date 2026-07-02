@@ -49,6 +49,23 @@ export type GetMovimientosQuery = {
   fechaFin?: string;
 };
 
+export interface ReporteCajaMonetarioQuery {
+  from?: string;
+  to?: string;
+
+  sucursalId?: number;
+  usuarioId?: number;
+
+  estadoCaja?: string;
+  clasificacion?: string;
+  metodoPago?: string;
+  motivo?: string;
+
+  cuentaBancariaId?: number;
+
+  incluirMovimientos?: string;
+}
+
 /**
  * GETTER DE SELECT PARA CAJAS DISPONIBLES
  * @param sucursalId
@@ -255,4 +272,14 @@ export function useGetReportCajas() {
   );
 }
 
+export function useGetReportCajasRango() {
+  return erp.useMutationApi<ReporteCajaMonetarioQuery>(
+    "post",
+    erpEndpoints.excel.cajas_report_range,
+    {
+      responseType: "blob",
+    },
+    undefined,
+  );
+}
 // const res = await axios.post(`${API_URL}/movimiento-financiero`, data);
